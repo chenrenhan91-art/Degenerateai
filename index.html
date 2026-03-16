@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>光荣的退化</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -16,6 +16,21 @@
         width: 100%;
         min-height: 100%;
         background: #050505;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        overflow-x: hidden;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      button,
+      a,
+      [role='button'] {
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
       }
     </style>
   </head>
@@ -251,7 +266,7 @@
         memo: `去科技化完成。建议少刷通知、多闻空气，按肚子饿和天黑的节奏安排今天。`,
       });
 
-      const dataUrlToDownloadUrl = (dataUrl) => {
+      const dataUrlToBlob = (dataUrl) => {
         if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
           throw new Error('导出失败，生成图片数据不可用。');
         }
@@ -269,7 +284,120 @@
           bytes[i] = binary.charCodeAt(i);
         }
 
-        return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+        return new Blob([bytes], { type: mimeType });
+      };
+
+      const dataUrlToDownloadUrl = (dataUrl) => {
+        const blob = dataUrlToBlob(dataUrl);
+        return URL.createObjectURL(blob);
+      };
+
+      const triggerBrowserDownload = (url, filename) => {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.rel = 'noopener';
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        window.setTimeout(() => {
+          anchor.remove();
+        }, 0);
+      };
+
+      const isTouchLikeDevice = () => {
+        try {
+          return window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const openPreviewWindow = (dataUrl, title) => {
+        const preview = window.open('', '_blank');
+        if (!preview) {
+          window.location.href = dataUrl;
+          return;
+        }
+
+        preview.opener = null;
+
+        preview.document.write(`<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${title}</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: #050505;
+        color: #f4f4f5;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      p {
+        margin: 0;
+        font-size: 14px;
+        color: #d4d4d8;
+        text-align: center;
+        line-height: 1.6;
+      }
+      img {
+        max-width: min(92vw, 960px);
+        max-height: 78vh;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        border: 1px solid rgba(255,255,255,0.12);
+        background: #000;
+        box-shadow: 0 0 28px rgba(0,0,0,0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <p>若未直接出现保存菜单，请长按图片保存，或使用浏览器分享菜单导出。</p>
+    <img src="${dataUrl}" alt="${title}" />
+  </body>
+</html>`);
+        preview.document.close();
+      };
+
+      const saveAsset = async ({ dataUrl, downloadUrl, filename, title, onPreviewFallback }) => {
+        if (!dataUrl) {
+          throw new Error('导出失败，缺少图片数据。');
+        }
+
+        if (isTouchLikeDevice()) {
+          const blob = dataUrlToBlob(dataUrl);
+          if (typeof navigator.share === 'function' && typeof File === 'function') {
+            const file = new File([blob], filename, { type: blob.type || 'image/png' });
+            if (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] })) {
+              try {
+                await navigator.share({ files: [file], title });
+                return;
+              } catch (error) {
+                if (error?.name === 'AbortError') return;
+              }
+            }
+          }
+
+          if (typeof onPreviewFallback === 'function') {
+            onPreviewFallback({ title, dataUrl });
+            return;
+          }
+
+          openPreviewWindow(dataUrl, title);
+          return;
+        }
+
+        triggerBrowserDownload(downloadUrl || dataUrlToDownloadUrl(dataUrl), filename);
       };
 
       const wrapCanvasText = (ctx, text, maxWidth) => {
@@ -422,9 +550,11 @@
         const [certificateExportState, setCertificateExportState] = useState('idle');
         const [imageDownloadUrl, setImageDownloadUrl] = useState('');
         const [certificateDownloadUrl, setCertificateDownloadUrl] = useState('');
+        const [certificateDataUrl, setCertificateDataUrl] = useState('');
         const [activeModel, setActiveModel] = useState(PREFERRED_IMAGE_MODEL);
         const [showManifesto, setShowManifesto] = useState(false);
         const [manifestoVisibleCount, setManifestoVisibleCount] = useState(0);
+        const [mobileSavePreview, setMobileSavePreview] = useState(null);
 
         // 编年史滚动状态
         const chronicleRef = useRef(null);
@@ -491,17 +621,52 @@
             certificateDownloadUrlRef.current = '';
           }
           setCertificateDownloadUrl('');
+          setCertificateDataUrl('');
         };
 
         const prepareCertificateDownload = (report, animalName) => {
           const canvas = buildCertificateCanvas({ report, animalName });
-          const downloadUrl = dataUrlToDownloadUrl(canvas.toDataURL('image/png'));
+          const dataUrl = canvas.toDataURL('image/png');
+          const downloadUrl = dataUrlToDownloadUrl(dataUrl);
           if (certificateDownloadUrlRef.current && certificateDownloadUrlRef.current !== downloadUrl) {
             revokeDownloadUrl(certificateDownloadUrlRef.current);
           }
           certificateDownloadUrlRef.current = downloadUrl;
+          setCertificateDataUrl(dataUrl);
           setCertificateDownloadUrl(downloadUrl);
           setCertificateExportState('ready');
+        };
+
+        const handleImageSave = async () => {
+          if (!selectedAnimal || !generatedImage || !imageDownloadUrl) return;
+          try {
+            await saveAsset({
+              dataUrl: generatedImage,
+              downloadUrl: imageDownloadUrl,
+              filename: `degradation_evolution_${selectedAnimal.id}.png`,
+              title: `${selectedAnimal.name}退化演化图`,
+              onPreviewFallback: setMobileSavePreview,
+            });
+          } catch (error) {
+            console.error(error);
+            setImageExportState('error');
+          }
+        };
+
+        const handleCertificateSave = async () => {
+          if (!selectedAnimal || !certificateDataUrl || !certificateDownloadUrl) return;
+          try {
+            await saveAsset({
+              dataUrl: certificateDataUrl,
+              downloadUrl: certificateDownloadUrl,
+              filename: `degradation_certificate_${selectedAnimal.id}.png`,
+              title: `${selectedAnimal.name}退化鉴定书`,
+              onPreviewFallback: setMobileSavePreview,
+            });
+          } catch (error) {
+            console.error(error);
+            setCertificateExportState('error');
+          }
         };
 
         const handleFileChange = (e) => {
@@ -655,6 +820,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
         const handleReset = () => {
           clearImageDownload();
           clearCertificateDownload();
+          setMobileSavePreview(null);
           setUploadStatus('idle');
           setUploadedImage(null);
           setBase64Data(null);
@@ -771,11 +937,9 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
         useEffect(() => {
           if (!showManifesto) {
             setManifestoVisibleCount(0);
-            document.body.style.overflow = '';
             return;
           }
 
-          document.body.style.overflow = 'hidden';
           let current = 0;
           const timer = setInterval(() => {
             current += 1;
@@ -787,9 +951,22 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
           return () => {
             clearInterval(timer);
-            document.body.style.overflow = '';
           };
         }, [showManifesto]);
+
+        useEffect(() => {
+          if (showManifesto || mobileSavePreview) {
+            document.body.style.overflow = 'hidden';
+            return () => {
+              document.body.style.overflow = '';
+            };
+          }
+
+          document.body.style.overflow = '';
+          return () => {
+            document.body.style.overflow = '';
+          };
+        }, [showManifesto, mobileSavePreview]);
 
         useEffect(() => {
           if (!showManifesto) return;
@@ -805,7 +982,15 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
         }, [showManifesto]);
 
         return (
-          <div className={`min-h-screen bg-[#050505] text-white overflow-x-hidden font-sans relative selection:bg-red-600 selection:text-white ${!showManifesto && glitchActive ? 'translate-x-1 translate-y-[-2px]' : ''}`}>
+          <div
+            className={`min-h-screen bg-[#050505] text-white overflow-x-hidden font-sans relative selection:bg-red-600 selection:text-white ${!showManifesto && glitchActive ? 'translate-x-1 translate-y-[-2px]' : ''}`}
+            style={{
+              paddingTop: 'env(safe-area-inset-top)',
+              paddingRight: 'env(safe-area-inset-right)',
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingLeft: 'env(safe-area-inset-left)',
+            }}
+          >
             {/* 核心 CSS 动画与样式 */}
             <style dangerouslySetInnerHTML={{__html: `
               @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Orbitron:wght@500;900&family=ZCOOL+KuaiLe&display=swap');
@@ -849,6 +1034,10 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               @media (min-width: 768px) {
                 .manifesto-copy { width: fit-content; }
                 .manifesto-copy .manifesto-gap { height: 0.75rem; }
+              }
+              @media (max-width: 767px) {
+                .manifesto-copy p { white-space: normal; text-wrap: balance; }
+                .holy-text { transform-origin: center; text-shadow: 0 0 12px rgba(255,215,0,0.75), 0 0 26px rgba(245,158,11,0.38); }
               }
               @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
               .animate-marquee { animation: marquee 20s linear infinite; }
@@ -923,11 +1112,50 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               </div>
             )}
 
+            {mobileSavePreview && (
+              <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center px-3 py-3 sm:px-4 sm:py-6 bg-black/88 backdrop-blur-xl">
+                <div className="absolute inset-0 scanlines opacity-20 pointer-events-none"></div>
+                <div className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-[#090909] shadow-[0_0_30px_rgba(0,0,0,0.45)] overflow-hidden">
+                  <button
+                    onClick={() => setMobileSavePreview(null)}
+                    className="absolute right-3 top-3 z-10 text-zinc-500 hover:text-white transition-colors"
+                    aria-label="关闭保存预览"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+
+                  <div className="p-4 sm:p-5 border-b border-white/10">
+                    <div className="font-tech text-[10px] tracking-[0.24em] text-amber-400/80">SAVE PREVIEW</div>
+                    <h3 className="mt-2 text-base sm:text-lg font-black text-white">{mobileSavePreview.title}</h3>
+                    <p className="mt-2 text-xs sm:text-sm leading-6 text-zinc-400">
+                      手机端可直接长按下方图片保存。若浏览器支持，也可以使用右上角或系统分享菜单导出。
+                    </p>
+                  </div>
+
+                  <div className="p-3 sm:p-4">
+                    <div className="rounded-xl border border-white/10 bg-black overflow-hidden">
+                      <img src={mobileSavePreview.dataUrl} alt={mobileSavePreview.title} className="block w-full h-auto max-h-[62vh] object-contain" />
+                    </div>
+                  </div>
+
+                  <div className="px-4 pb-4 sm:px-5 sm:pb-5 flex justify-end">
+                    <button
+                      onClick={() => setMobileSavePreview(null)}
+                      className="px-5 py-2.5 text-sm font-bold tracking-[0.16em] uppercase bg-white text-black"
+                    >
+                      完成
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* --- 顶部终端状态栏 --- */}
-            <header className="relative z-20 flex justify-between items-center p-4 border-b border-red-900/50 bg-black/50 backdrop-blur-sm font-tech text-xs tracking-widest text-red-500">
+            <header className="relative z-20 flex flex-wrap justify-between items-center gap-x-3 gap-y-2 px-3 py-3 sm:px-4 sm:py-4 border-b border-red-900/50 bg-black/50 backdrop-blur-sm font-tech text-[10px] sm:text-xs tracking-[0.18em] sm:tracking-widest text-red-500">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 animate-pulse" />
-                <span>SYS.STATE: <span className="text-red-600 font-bold">COMPROMISED</span></span>
+                <span className="md:hidden">SYS: <span className="text-red-600 font-bold">BROKEN</span></span>
+                <span className="hidden md:inline">SYS.STATE: <span className="text-red-600 font-bold">COMPROMISED</span></span>
               </div>
               <div className="hidden md:flex items-center gap-4 opacity-60">
                 <span>AI_EVOLUTION: 99.9%</span>
@@ -935,16 +1163,17 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               </div>
               <div className="flex items-center gap-2 text-yellow-500">
                 <Fingerprint className="w-4 h-4" />
-                <span>CARBON_BASED_ID: VERIFIED</span>
+                <span className="md:hidden">ID: OK</span>
+                <span className="hidden md:inline">CARBON_BASED_ID: VERIFIED</span>
               </div>
             </header>
 
             {/* === 重构的 Hero Section === */}
-            <main className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12 lg:gap-20 min-h-[85vh] w-full max-w-[1200px] mx-auto px-6 lg:px-12 pt-12 pb-20">
+            <main className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12 lg:gap-20 min-h-[78svh] md:min-h-[85vh] w-full max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-12 pt-8 sm:pt-12 pb-16 sm:pb-20">
               {/* 左侧：主视觉文案排版 */}
-              <div className="w-full md:w-[45%] lg:w-[40%] flex flex-col items-start text-left gap-4 relative z-20 mt-6 md:mt-0 shrink-0">
+              <div className="w-full md:w-[45%] lg:w-[40%] flex flex-col items-start text-left gap-3 sm:gap-4 relative z-20 mt-4 md:mt-0 shrink-0">
                 <div className="flex flex-col gap-1 w-full">
-                  <span className="text-xl md:text-3xl font-bold tracking-[0.2em] text-zinc-400">AI的进化已经</span>
+                  <span className="text-lg sm:text-xl md:text-3xl font-bold tracking-[0.14em] sm:tracking-[0.2em] text-zinc-400">AI的进化已经</span>
                   <div className="relative inline-block mt-2">
                     <span className="text-[70px] md:text-[90px] lg:text-[120px] leading-none glitch-text block transform -skew-x-6 drop-shadow-[0_0_20px_rgba(255,0,60,0.5)]" data-text="不可控">不可控</span>
                     <div className="absolute -bottom-1 md:-bottom-3 left-0 w-[90%] h-1.5 md:h-3 bg-stripes bg-[#ff003c] opacity-80 rounded" style={{backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, #000 10px, #000 20px)'}}></div>
@@ -958,20 +1187,20 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   </div>
                 </div>
 
-                <div className="text-base md:text-xl lg:text-2xl font-bold tracking-[0.3em] text-zinc-400 mt-2 mb-2">捍卫碳基生物主权，加入</div>
+                <div className="text-sm sm:text-base md:text-xl lg:text-2xl font-bold tracking-[0.18em] sm:tracking-[0.3em] text-zinc-400 mt-2 mb-2">捍卫碳基生物主权，加入</div>
 
                 <div className="relative w-full flex justify-start py-4">
                   <div className="absolute top-1/2 left-[20%] -translate-x-1/2 -translate-y-1/2 w-[100%] max-w-lg h-[200%] bg-gradient-to-t from-yellow-500/0 via-yellow-200/10 to-transparent blur-3xl pointer-events-none rounded-full animate-pulse" style={{clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)', animationDuration: '2.5s'}}></div>
-                  <h2 className="text-4xl md:text-5xl lg:text-[72px] leading-tight font-holy holy-text italic whitespace-nowrap z-10 flex items-center gap-3 relative left-[-10px]">
-                    <Zap className="w-8 h-8 md:w-10 md:h-10 lg:w-14 lg:h-14 text-yellow-400 opacity-80 drop-shadow-[0_0_15px_rgba(250,204,21,1)]" />
+                  <h2 className="text-[38px] sm:text-4xl md:text-5xl lg:text-[72px] leading-tight font-holy holy-text italic z-10 flex flex-wrap items-center gap-2 sm:gap-3 relative left-0 sm:left-[-10px]">
+                    <Zap className="w-7 h-7 sm:w-8 sm:h-8 md:w-10 md:h-10 lg:w-14 lg:h-14 text-yellow-400 opacity-80 drop-shadow-[0_0_15px_rgba(250,204,21,1)]" />
                     光荣的退化
                   </h2>
                 </div>
 
-                <div className="mt-6 lg:mt-8 flex flex-col sm:flex-row items-start gap-4 lg:gap-6 z-20">
+                <div className="mt-6 lg:mt-8 flex flex-col sm:flex-row items-stretch sm:items-start gap-4 lg:gap-6 z-20 w-full">
                   <button
                     onClick={scrollToEvolutionLab}
-                    className="group relative overflow-hidden border-2 border-black bg-[#ff003c] px-7 py-3.5 text-left text-black shadow-[0_0_24px_rgba(255,0,60,0.45)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_34px_rgba(255,0,60,0.7)]"
+                    className="group relative overflow-hidden border-2 border-black bg-[#ff003c] px-6 sm:px-7 py-3.5 text-left text-black shadow-[0_0_24px_rgba(255,0,60,0.45)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_34px_rgba(255,0,60,0.7)] w-full sm:w-auto"
                   >
                     <div className="absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.18),rgba(0,0,0,0.18)_14px,transparent_14px,transparent_28px)] opacity-80"></div>
                     <div className="absolute inset-0 bg-gradient-to-r from-white/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
@@ -982,7 +1211,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   </button>
                   <button
                     onClick={() => setShowManifesto(true)}
-                    className="group relative border border-yellow-500/45 bg-black/10 px-7 py-3.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-yellow-300 hover:bg-yellow-500/6 hover:shadow-[0_0_22px_rgba(234,179,8,0.18)]"
+                    className="group relative border border-yellow-500/45 bg-black/10 px-6 sm:px-7 py-3.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-yellow-300 hover:bg-yellow-500/6 hover:shadow-[0_0_22px_rgba(234,179,8,0.18)] w-full sm:w-auto"
                   >
                     <div className="absolute left-3 right-3 top-2 h-px bg-gradient-to-r from-transparent via-yellow-400/70 to-transparent opacity-70"></div>
                     <div className="absolute left-3 right-3 bottom-2 h-px bg-gradient-to-r from-transparent via-yellow-400/45 to-transparent opacity-55"></div>
@@ -995,7 +1224,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               </div>
 
               {/* 右侧：纯手写生成的 3D ASCII 动态人形 */}
-              <div className="relative w-full md:w-[45%] lg:w-[50%] h-[50vh] md:h-[70vh] lg:h-[80vh] z-0 pointer-events-none opacity-90 mix-blend-screen mt-8 md:mt-0 flex items-center justify-center">
+              <div className="relative w-full md:w-[45%] lg:w-[50%] h-[38vh] sm:h-[46vh] md:h-[70vh] lg:h-[80vh] z-0 pointer-events-none opacity-90 mix-blend-screen mt-6 md:mt-0 flex items-center justify-center">
                 <ASCIIParticleHumanoid />
               </div>
             </main>
@@ -1005,10 +1234,13 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               {/* 背景网格线 */}
               <div className="absolute inset-0 border-y border-cyan-900/30 -z-10 bg-[linear-gradient(to_right,#083344_1px,transparent_1px)] bg-[size:50px_100%] opacity-20"></div>
 
-              <div className="flex items-center gap-4 mb-16 opacity-80 pl-4 border-l-4 border-cyan-500">
+              <div className="flex items-center gap-4 mb-6 md:mb-16 opacity-80 pl-4 border-l-4 border-cyan-500">
                 <ScanLine className="w-6 h-6 text-cyan-400" />
                 <h3 className="font-tech text-cyan-400 tracking-[0.3em] font-bold text-sm md:text-lg">[ 碳基生物演化轨迹 // CARBON_EVOLUTION_RECORD ]</h3>
               </div>
+              <p className="md:hidden mb-6 text-xs text-cyan-300/70 tracking-[0.16em] text-center">
+                左右滑动可查看完整演化轨迹
+              </p>
 
               {/* 演化图解容器 */}
               <div className="relative w-full overflow-x-auto lg:overflow-visible pb-10 custom-scrollbar">
@@ -1109,7 +1341,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
             <section className="relative z-10 w-full max-w-4xl mx-auto px-4 mt-12 mb-32" id="evolution-lab">
               <div className="text-center mb-8 relative">
                 <div className="absolute top-1/2 left-0 w-full h-px bg-zinc-800 -z-10"></div>
-                <span className="bg-[#050505] px-6 text-red-500 font-tech font-bold tracking-[0.3em] text-xl md:text-2xl inline-flex items-center gap-3 border border-red-900/50 rounded-full py-2 shadow-[0_0_20px_rgba(255,0,60,0.1)]">
+                <span className="bg-[#050505] max-w-full px-4 sm:px-6 text-red-500 font-tech font-bold tracking-[0.16em] sm:tracking-[0.3em] text-sm sm:text-xl md:text-2xl inline-flex flex-wrap items-center justify-center gap-2 sm:gap-3 border border-red-900/50 rounded-full py-2 shadow-[0_0_20px_rgba(255,0,60,0.1)]">
                   <Dna className="w-5 h-5 animate-spin-slow" />
                   退化模拟器 · NANOBANANA CORE
                   <Dna className="w-5 h-5 animate-spin-slow" />
@@ -1117,7 +1349,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               </div>
 
               {/* 紧凑型表单容器 */}
-              <div className="border border-zinc-800 bg-zinc-950/90 backdrop-blur-md shadow-2xl p-6 relative">
+              <div className="border border-zinc-800 bg-zinc-950/90 backdrop-blur-md shadow-2xl p-4 sm:p-6 relative">
                 <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-red-600"></div>
                 <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-red-600"></div>
 
@@ -1132,7 +1364,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     )}
 
                     <div className="flex flex-col sm:flex-row gap-4">
-                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
+                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
                         {uploadedImage ? (
                           <>
                             <img src={uploadedImage} alt="Preview" className="w-full h-full object-cover opacity-80" />
@@ -1149,16 +1381,16 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                         )}
                       </div>
 
-                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-xs text-zinc-400 tracking-widest">
-                        <div className="flex justify-between border-b border-zinc-800 pb-2">
+                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
+                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
                           <span>BIOMETRIC INPUT:</span>
                           <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
                         </div>
-                        <div className="flex justify-between border-b border-zinc-800 pb-2">
+                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
                           <span>TARGET SPECIES:</span>
                           <span className={selectedAnimal ? 'text-yellow-400 font-bold' : 'text-zinc-600'}>{selectedAnimal ? selectedAnimal.name.toUpperCase() : 'AWAITING SELECTION'}</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between gap-3">
                           <span>ENGINE:</span>
                           <span className="text-cyan-500">{activeModel.toUpperCase()}</span>
                         </div>
@@ -1188,19 +1420,19 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 )}
 
                 {processState === 'processing' && (
-                  <div className="w-full py-24 flex flex-col items-center justify-center relative overflow-hidden bg-[#020202]">
+                  <div className="w-full py-16 sm:py-24 flex flex-col items-center justify-center relative overflow-hidden bg-[#020202]">
                     <div className="absolute inset-0 scanlines opacity-40"></div>
                     <div className="absolute top-1/2 left-0 w-full h-1 bg-red-500 shadow-[0_0_20px_#ff003c] animate-[pulse_0.5s_infinite] -translate-y-1/2"></div>
                     <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
-                    <h3 className="text-xl font-black tracking-[0.4em] text-white glitch-text relative z-10" data-text="AI引擎重写中">AI引擎重写中</h3>
-                    <p className="text-red-400 font-tech text-xs tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
+                    <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
+                    <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
                   </div>
                 )}
 
                 {processState === 'complete' && generatedImage && (
                   <div className="w-full flex flex-col animate-in fade-in zoom-in duration-500">
-                    <div className="bg-black p-3 border-b border-zinc-800 flex justify-between items-center">
-                      <div className="flex items-center gap-2 text-red-500 font-tech text-xs">
+                    <div className="bg-black p-3 border-b border-zinc-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                      <div className="flex items-center gap-2 text-red-500 font-tech text-[10px] sm:text-xs">
                         <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                         EVOLUTION_TRAJECTORY_RENDERED
                       </div>
@@ -1212,12 +1444,12 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <div className="relative border-x border-b border-zinc-800 bg-[#070707] p-4 md:p-5">
                       <div className="absolute inset-0 scanlines opacity-15 pointer-events-none"></div>
                       <div className="relative border border-amber-700/40 bg-[linear-gradient(180deg,rgba(24,19,14,0.9),rgba(8,8,8,0.98))] shadow-[inset_0_0_0_1px_rgba(255,220,150,0.05)]">
-                        <div className="flex items-center justify-between gap-4 border-b border-amber-800/40 px-4 py-3 md:px-5">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 border-b border-amber-800/40 px-4 py-3 md:px-5">
                           <div>
                             <div className="font-tech text-[10px] tracking-[0.3em] text-amber-500/75">CARBON DEGRADATION ARCHIVE</div>
                             <div className="mt-1 text-sm md:text-base font-black tracking-[0.18em] text-[#f4dfb2]">碳基生物退化档案</div>
                           </div>
-                          <div className="border border-red-500/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-red-400">
+                          <div className="border border-red-500/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-red-400 self-start sm:self-auto">
                             FILE ACTIVE
                           </div>
                         </div>
@@ -1228,16 +1460,16 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                             <div className="absolute inset-0 pointer-events-none z-10 bg-[linear-gradient(135deg,rgba(245,208,120,0.08),transparent_28%,transparent_72%,rgba(255,0,60,0.08))]"></div>
                             <div className="absolute inset-0 pointer-events-none z-10 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.03)_1px,transparent_1px,transparent_18px)] opacity-40"></div>
 
-                            <img src={generatedImage} alt="Evolution Trajectory" className="w-full h-auto max-h-[620px] object-contain relative z-0" />
+                            <img src={generatedImage} alt="Evolution Trajectory" className="w-full h-auto max-h-[440px] sm:max-h-[620px] object-contain relative z-0" />
 
-                            <div className="absolute top-3 left-3 z-30 font-tech text-[10px] text-white/70 tracking-widest flex flex-col bg-black/60 p-2 backdrop-blur-sm border border-white/10">
+                            <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-30 max-w-[calc(100%-1rem)] sm:max-w-none font-tech text-[9px] sm:text-[10px] text-white/70 tracking-[0.16em] sm:tracking-widest flex flex-col bg-black/60 p-1.5 sm:p-2 backdrop-blur-sm border border-white/10">
                               <span className="text-amber-300 font-bold mb-1">ARCHIVE: OVERLAP_MORPH</span>
                               <span>SUBJECT: HUMAN_001</span>
                               <span>DESTINATION: {selectedAnimal.name}</span>
                               <span>ENGINE: {activeModel.toUpperCase()}</span>
                             </div>
 
-                            <div className="absolute bottom-3 right-3 z-30 border border-red-500/45 bg-black/55 px-2 py-1 text-[10px] font-tech tracking-[0.22em] text-red-400">
+                            <div className="hidden sm:block absolute bottom-3 right-3 z-30 border border-red-500/45 bg-black/55 px-2 py-1 text-[10px] font-tech tracking-[0.22em] text-red-400">
                               DEGRADED SPECIMEN
                             </div>
                           </div>
@@ -1246,12 +1478,12 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                             <div className="mt-4 border border-amber-800/35 bg-[#0b0b0b] p-3 md:p-4 relative overflow-hidden">
                               <div className="absolute inset-0 scanlines opacity-15 pointer-events-none"></div>
                               <div className="relative">
-                                <div className="flex items-center justify-between gap-3 border-b border-amber-900/40 pb-2.5 mb-3">
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-amber-900/40 pb-2.5 mb-3">
                                   <div>
                                     <div className="font-tech text-[10px] tracking-[0.28em] text-amber-500/80">CARBON DEGRADATION CERTIFICATE</div>
                                     <h3 className="mt-1.5 text-base md:text-lg font-black text-[#f3e0b5] tracking-[0.08em]">{selectedAnimal.name}系退化鉴定书</h3>
                                   </div>
-                                  <div className="shrink-0 border border-amber-400/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-amber-300">APPROVED</div>
+                                  <div className="shrink-0 border border-amber-400/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-amber-300 self-start sm:self-auto">APPROVED</div>
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1279,22 +1511,22 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                       </div>
                     </div>
 
-                    <div className="bg-zinc-900 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="bg-zinc-900 p-4 flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-4">
                       <div className="text-zinc-400 text-xs sm:text-sm flex-1"><span className="text-yellow-500 font-bold">逆演化完成。</span></div>
-                      <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-                        <div className="flex flex-col items-end gap-2">
+                      <div className="flex flex-col sm:flex-row gap-3 shrink-0 w-full sm:w-auto">
+                        <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
                           {imageExportState === 'ready' && imageDownloadUrl ? (
-                            <a href={imageDownloadUrl} download={`degradation_evolution_${selectedAnimal.id}.png`} className="px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 bg-white text-black hover:bg-yellow-400">
+                            <button onClick={handleImageSave} className="w-full sm:w-auto px-6 py-3 sm:py-2 text-sm font-bold tracking-[0.16em] sm:tracking-widest uppercase transition-colors flex items-center justify-center gap-2 bg-white text-black hover:bg-yellow-400">
                               <Download className="w-4 h-4" />
                               保存退化演化图
-                            </a>
+                            </button>
                           ) : (
-                            <button disabled className={`px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 ${imageExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
+                            <button disabled className={`w-full sm:w-auto px-6 py-3 sm:py-2 text-sm font-bold tracking-[0.16em] sm:tracking-widest uppercase transition-colors flex items-center justify-center gap-2 ${imageExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
                               <Download className="w-4 h-4" />
                               {imageExportState === 'error' ? '演化图准备失败' : '演化图准备中...'}
                             </button>
                           )}
-                          <div className="text-[11px] font-tech tracking-[0.16em] min-h-[16px] text-right">
+                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
                             {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
                             {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
                             {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
@@ -1302,25 +1534,28 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                           </div>
                         </div>
 
-                        <div className="flex flex-col items-end gap-2">
+                        <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
                           {certificateExportState === 'ready' && certificateDownloadUrl ? (
-                            <a href={certificateDownloadUrl} download={`degradation_certificate_${selectedAnimal.id}.png`} className="px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 border border-amber-500/60 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20">
+                            <button onClick={handleCertificateSave} className="w-full sm:w-auto px-6 py-3 sm:py-2 text-sm font-bold tracking-[0.16em] sm:tracking-widest uppercase transition-colors flex items-center justify-center gap-2 border border-amber-500/60 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20">
                               <Download className="w-4 h-4" />
                               保存退化鉴定书
-                            </a>
+                            </button>
                           ) : (
-                            <button disabled className={`px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 ${certificateExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
+                            <button disabled className={`w-full sm:w-auto px-6 py-3 sm:py-2 text-sm font-bold tracking-[0.16em] sm:tracking-widest uppercase transition-colors flex items-center justify-center gap-2 ${certificateExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
                               <Download className="w-4 h-4" />
                               {certificateExportState === 'error' ? '鉴定书准备失败' : '鉴定书准备中...'}
                             </button>
                           )}
-                          <div className="text-[11px] font-tech tracking-[0.16em] min-h-[16px] text-right">
+                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
                             {certificateExportState === 'ready' && <span className="text-amber-300">CERTIFICATE READY</span>}
                             {certificateExportState === 'building' && <span className="text-yellow-400">CERTIFICATE PREPARING</span>}
                             {certificateExportState === 'error' && <span className="text-red-400">CERTIFICATE EXPORT FAILED</span>}
                             {certificateExportState === 'idle' && <span className="text-zinc-500">PNG / CERTIFICATE</span>}
                           </div>
                         </div>
+                      </div>
+                      <div className="sm:hidden text-[11px] leading-5 text-zinc-500 text-center">
+                        手机端点击保存会优先唤起系统分享；如果浏览器不支持，会打开可长按保存的预览。
                       </div>
                     </div>
                   </div>
@@ -1329,7 +1564,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
             </section>
 
             {/* --- 底部修饰边框与跑马灯 --- */}
-            <footer className="fixed bottom-0 left-0 w-full overflow-hidden bg-yellow-400 text-black font-black py-2 border-t-4 border-black z-50 transform -skew-y-1 translate-y-2 pointer-events-none">
+            <footer className="hidden md:block fixed bottom-0 left-0 w-full overflow-hidden bg-yellow-400 text-black font-black py-2 border-t-4 border-black z-50 transform -skew-y-1 translate-y-2 pointer-events-none">
               <div className="flex whitespace-nowrap animate-marquee items-center gap-8 text-sm md:text-base">
                 {Array(8).fill('').map((_, i) => (
                   <React.Fragment key={i}>
