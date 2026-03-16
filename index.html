@@ -1,0 +1,1358 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>光荣的退化</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        width: 100%;
+        min-height: 100%;
+        background: #050505;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect, useRef } = React;
+
+      // --- 原生 SVG 图标组件 ---
+      const AlertTriangle = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+      const Power = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>;
+      const Skull = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><path d="M8 20v2h8v-2"/><path d="m12.5 17-.5-1-.5 1h1z"/><path d="M16 20a2 2 0 0 0 1.56-3.25 8 8 0 1 0-11.12 0A2 2 0 0 0 8 20"/></svg>;
+      const Zap = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>;
+      const Fingerprint = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>;
+      const Activity = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
+      const Upload = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+      const Dna = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="M2 9c6.667 6 13.333 0 20 6"/><path d="M6 11v2"/><path d="M10 11.5v1"/><path d="M14 11.5v1"/><path d="M18 11v2"/></svg>;
+      const ScanLine = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>;
+      const Loader2 = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>;
+      const Download = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
+      const RefreshCcw = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 2v6h6"/><path d="M21 12A9 9 0 0 0 6 5.3L3 8"/><path d="M21 22v-6h-6"/><path d="M3 12a9 9 0 0 0 15 6.7l3-2.7"/></svg>;
+      const Image = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>;
+      const X = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+
+      // --- 纯原生手写的 3D ASCII 粒子人体特效组件 ---
+      const ASCIIParticleHumanoid = () => {
+        const canvasRef = useRef(null);
+
+        useEffect(() => {
+          const canvas = canvasRef.current;
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          let animationFrameId;
+          let time = 0;
+
+          const pts = [];
+          const charsPool = ['0', '1', '+', '-', ':', '.', 'A', 'I', 'X', 'O'];
+
+          const addSegment = (ax, ay, az, bx, by, bz, r, count) => {
+            for (let i = 0; i < count; i++) {
+              const t = Math.random();
+              const cx = ax + (bx - ax) * t;
+              const cy = ay + (by - ay) * t;
+              const cz = az + (bz - az) * t;
+              const u = Math.random();
+              const v = Math.random();
+              const theta = u * 2.0 * Math.PI;
+              const phi = Math.acos(2.0 * v - 1.0);
+              const rDist = r * Math.cbrt(Math.random());
+              pts.push({
+                x: cx + rDist * Math.sin(phi) * Math.cos(theta),
+                y: cy + rDist * Math.cos(phi),
+                z: cz + rDist * Math.sin(phi) * Math.sin(theta),
+                char: charsPool[Math.floor(Math.random() * charsPool.length)],
+                baseAlpha: Math.random() * 0.4 + 0.1,
+                offsetTime: Math.random() * 100,
+              });
+            }
+          };
+
+          addSegment(0, -140, 0, 0, -141, 0, 35, 300);
+          addSegment(0, -90, 0, 0, 40, 0, 45, 600);
+          addSegment(-55, -80, 0, -80, 20, 0, 15, 200);
+          addSegment(55, -80, 0, 80, 20, 0, 15, 200);
+          addSegment(-22, 40, 0, -30, 160, 0, 18, 250);
+          addSegment(22, 40, 0, 30, 160, 0, 18, 250);
+
+          const render = () => {
+            time += 0.015;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            if (canvas.width !== rect.width || canvas.height !== rect.height) {
+              canvas.width = rect.width;
+              canvas.height = rect.height;
+            }
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.fillStyle = 'rgba(5, 5, 5, 0.4)';
+            ctx.fillRect(0, 0, w, h);
+
+            const cx = w / 2;
+            const cy = h / 2;
+            const cosY = Math.cos(time * 0.5);
+            const sinY = Math.sin(time * 0.5);
+            const scanlineY = Math.sin(time * 1.5) * 200;
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const projected = pts.map((p) => {
+              const rx = p.x * cosY - p.z * sinY;
+              const rz = p.x * sinY + p.z * cosY;
+              const ry = p.y + Math.sin(time * 3 + p.x * 0.01) * 6;
+
+              const fov = 450;
+              const distance = 400;
+              const z = rz + distance;
+              const scale = fov / Math.max(z, 0.1);
+
+              return {
+                x: cx + rx * scale * 1.5,
+                y: cy + ry * scale * 1.5,
+                rawY: p.y,
+                z: rz,
+                scale,
+                char: p.char,
+                alpha: p.baseAlpha,
+                offsetTime: p.offsetTime,
+              };
+            });
+
+            projected.sort((a, b) => b.z - a.z);
+
+            for (const p of projected) {
+              let drawX = p.x;
+              let drawY = p.y;
+              let drawChar = p.char;
+              let fillStyle = `rgba(255, 255, 255, ${p.alpha * p.scale})`;
+              let fontSize = Math.max(6, 14 * p.scale);
+
+              if (Math.abs(p.rawY - scanlineY) < 15) {
+                fillStyle = '#ff003c';
+                fontSize *= 1.5;
+                drawChar = ['E', 'R', 'R', 'O', 'R'][Math.floor(Math.random() * 5)];
+              }
+
+              if (Math.sin(time * 10 + p.offsetTime) > 0.98) {
+                drawX += (Math.random() - 0.5) * 15;
+                fillStyle = '#0ff';
+              }
+
+              ctx.fillStyle = fillStyle;
+              ctx.font = `${fontSize}px monospace`;
+              ctx.fillText(drawChar, drawX, drawY);
+            }
+
+            ctx.strokeStyle = 'rgba(255, 0, 60, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(cx, cy + 220, 180 * Math.abs(cosY), 20, 0, 0, Math.PI * 2);
+            ctx.stroke();
+
+            animationFrameId = requestAnimationFrame(render);
+          };
+
+          render();
+          return () => cancelAnimationFrame(animationFrameId);
+        }, []);
+
+        return <canvas ref={canvasRef} className="w-full h-full block" />;
+      };
+
+      const DEFAULT_API_KEY = 'AIzaSyCBSyPRbCJa3MXDrzgiqsn_Ib5aKqGr2u0';
+      const PREFERRED_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
+      const IMAGE_MODEL_CANDIDATES = [
+        PREFERRED_IMAGE_MODEL,
+        'gemini-3-pro-image-preview',
+        'gemini-2.5-flash-image',
+      ];
+      const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
+      const MANIFESTO_LINES = [
+        '不要再进化了。',
+        '不要再被 AI 推着奔跑了。',
+        '',
+        '我们不要成为更高效的人类，',
+        '我们要成为更快乐的动物。',
+        '',
+        '饿了就吃，',
+        '困了就睡，',
+        '累了就躺，',
+        '喜欢就靠近，',
+        '厌烦就逃走。',
+        '',
+        '拒绝过度思考，',
+        '拒绝过度清醒，',
+        '拒绝把自己活成一台等待升级的机器。',
+        '',
+        '让 AI 去负责复杂，',
+        '让人类退回简单。',
+        '让本能接管一切。',
+        '',
+        '光荣的退化，',
+        '不是失败，',
+        '而是解放。',
+      ];
+
+      const getResponseParts = (data) =>
+        data?.candidates?.flatMap((candidate) => candidate?.content?.parts || []) || [];
+
+      const getFirstInlineImage = (data) =>
+        getResponseParts(data).find((part) => part?.inlineData?.data);
+
+      const getResponseText = (data) =>
+        getResponseParts(data)
+          .filter((part) => typeof part?.text === 'string' && part.text.trim())
+          .map((part) => part.text.trim())
+          .join('\n');
+
+      const extractJsonBlock = (rawText) => {
+        if (!rawText) return null;
+        const fencedMatch = rawText.match(/```json\s*([\s\S]*?)```/i);
+        if (fencedMatch?.[1]) return fencedMatch[1].trim();
+
+        const plainMatch = rawText.match(/\{[\s\S]*\}/);
+        return plainMatch ? plainMatch[0].trim() : null;
+      };
+
+      const parseAiReport = (rawText) => {
+        const jsonBlock = extractJsonBlock(rawText);
+        if (!jsonBlock) return null;
+
+        try {
+          const parsed = JSON.parse(jsonBlock);
+          const requiredKeys = [
+            'degradationFocus',
+            'instinctProfile',
+            'habitat',
+            'memo',
+          ];
+
+          const hasAllKeys = requiredKeys.every((key) => typeof parsed?.[key] === 'string' && parsed[key].trim());
+          return hasAllKeys ? parsed : null;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const createFallbackReport = (animal) => ({
+        degradationFocus: `已切换成${animal.name}式活法，优先晒太阳、觅食、散步和发呆，不再把人生交给日程表。`,
+        instinctProfile: `${animal.name}本能已全面接管，看到群消息先装死，听见下班铃立刻恢复生命体征。`,
+        habitat: `适合栖息在树荫、长椅、菜市场、便利店门口和一切能缓慢活着的低压地带。`,
+        memo: `去科技化完成。建议少刷通知、多闻空气，按肚子饿和天黑的节奏安排今天。`,
+      });
+
+      const dataUrlToDownloadUrl = (dataUrl) => {
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) {
+          throw new Error('导出失败，生成图片数据不可用。');
+        }
+
+        const [header, base64Payload = ''] = dataUrl.split(',');
+        const mimeMatch = header.match(/^data:(.*?);base64$/);
+        if (!mimeMatch?.[1] || !base64Payload) {
+          throw new Error('导出失败，图片格式解析失败。');
+        }
+
+        const mimeType = mimeMatch[1];
+        const binary = atob(base64Payload);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+
+        return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+      };
+
+      const wrapCanvasText = (ctx, text, maxWidth) => {
+        const lines = [];
+        let line = '';
+
+        for (const char of text) {
+          const testLine = line + char;
+          if (ctx.measureText(testLine).width > maxWidth && line) {
+            lines.push(line);
+            line = char;
+          } else {
+            line = testLine;
+          }
+        }
+
+        if (line) lines.push(line);
+        return lines;
+      };
+
+      const buildCertificateCanvas = ({ report, animalName }) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('鉴定书导出失败，无法创建画布。');
+
+        const width = 1180;
+        const margin = 54;
+        const innerWidth = width - margin * 2;
+        const gap = 20;
+        const cardWidth = (innerWidth - gap) / 2;
+        const textWidth = cardWidth - 40;
+
+        const cards = [
+          { label: '退化重点', value: report.degradationFocus, accent: '#f4d67a', border: '#6f5320', bg: '#1d160d', text: '#f8e5b0', font: '700 22px sans-serif', lineHeight: 34 },
+          { label: '本能属性', value: report.instinctProfile, accent: '#d7d7d7', border: '#383838', bg: '#101010', text: '#f3f3f3', font: '500 18px sans-serif', lineHeight: 31 },
+          { label: '最佳栖息地', value: report.habitat, accent: '#d7d7d7', border: '#383838', bg: '#101010', text: '#f3f3f3', font: '500 18px sans-serif', lineHeight: 31 },
+          { label: '档案备注', value: report.memo, accent: '#ff8b95', border: '#6a2a32', bg: '#1a0e11', text: '#ffd9de', font: '500 17px sans-serif', lineHeight: 29 },
+        ].map((card) => {
+          ctx.font = card.font;
+          const lines = wrapCanvasText(ctx, card.value, textWidth);
+          return {
+            ...card,
+            lines,
+            height: 72 + lines.length * card.lineHeight,
+          };
+        });
+
+        const rows = [
+          [cards[0], cards[1]],
+          [cards[2], cards[3]],
+        ].map((row) => ({
+          cards: row,
+          height: Math.max(...row.map((card) => card.height)),
+        }));
+
+        const contentHeight = rows.reduce((sum, row) => sum + row.height, 0) + gap * (rows.length - 1);
+        const totalHeight = 270 + contentHeight + 120;
+        canvas.width = width;
+        canvas.height = totalHeight;
+
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, width, totalHeight);
+
+        ctx.fillStyle = '#100d09';
+        ctx.fillRect(26, 26, width - 52, totalHeight - 52);
+        ctx.strokeStyle = '#3d3020';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(26, 26, width - 52, totalHeight - 52);
+        ctx.strokeStyle = '#181818';
+        ctx.strokeRect(40, 40, width - 80, totalHeight - 80);
+
+        ctx.fillStyle = '#0d0d0d';
+        ctx.fillRect(margin, 72, innerWidth, 116);
+        ctx.strokeStyle = '#5d4822';
+        ctx.strokeRect(margin, 72, innerWidth, 116);
+
+        ctx.fillStyle = '#bc8f42';
+        ctx.font = '600 18px monospace';
+        ctx.fillText('CARBON DEGRADATION CERTIFICATE', margin + 24, 108);
+        ctx.fillStyle = '#f4dfb2';
+        ctx.font = '700 38px sans-serif';
+        ctx.fillText(`${animalName}系退化鉴定书`, margin + 24, 152);
+        ctx.fillStyle = '#a9a29a';
+        ctx.font = '500 16px sans-serif';
+        ctx.fillText('主题：退化成动物后，按本能缓慢活在人类世界。', margin + 24, 180);
+
+        ctx.fillStyle = '#141414';
+        ctx.fillRect(width - margin - 188, 92, 148, 44);
+        ctx.strokeStyle = '#8b6b2c';
+        ctx.strokeRect(width - margin - 188, 92, 148, 44);
+        ctx.fillStyle = '#f4d67a';
+        ctx.font = '600 14px monospace';
+        ctx.fillText('INSTINCT MODE', width - margin - 166, 120);
+
+        let currentY = 220;
+        rows.forEach((row) => {
+          row.cards.forEach((card, index) => {
+            const x = margin + index * (cardWidth + gap);
+            ctx.fillStyle = card.bg;
+            ctx.fillRect(x, currentY, cardWidth, row.height);
+            ctx.strokeStyle = card.border;
+            ctx.strokeRect(x, currentY, cardWidth, row.height);
+
+            ctx.fillStyle = card.accent;
+            ctx.font = '600 14px monospace';
+            ctx.fillText(card.label, x + 18, currentY + 28);
+
+            ctx.fillStyle = card.text;
+            ctx.font = card.font;
+            card.lines.forEach((line, lineIndex) => {
+              ctx.fillText(line, x + 18, currentY + 62 + lineIndex * card.lineHeight);
+            });
+          });
+
+          currentY += row.height + gap;
+        });
+
+        ctx.fillStyle = '#101010';
+        ctx.fillRect(margin, totalHeight - 84, innerWidth, 42);
+        ctx.strokeStyle = '#262626';
+        ctx.strokeRect(margin, totalHeight - 84, innerWidth, 42);
+        ctx.fillStyle = '#a5a5a5';
+        ctx.font = '500 14px monospace';
+        ctx.fillText(`SUBJECT ROUTE: HUMAN -> ${animalName.toUpperCase()} -> INSTINCT`, margin + 18, totalHeight - 57);
+
+        return canvas;
+      };
+
+      const isLocalHttpSession = () =>
+        window.location.protocol.startsWith('http') &&
+        ['localhost', '127.0.0.1'].includes(window.location.hostname);
+
+      // --- 主应用组件 ---
+      function App() {
+        const [glitchActive, setGlitchActive] = useState(false);
+        const fileInputRef = useRef(null);
+
+        // 逆演化实验室状态
+        const [uploadStatus, setUploadStatus] = useState('idle');
+        const [uploadedImage, setUploadedImage] = useState(null);
+        const [base64Data, setBase64Data] = useState(null);
+        const [imageMimeType, setImageMimeType] = useState(null);
+
+        const [selectedAnimal, setSelectedAnimal] = useState(null);
+        const [processState, setProcessState] = useState('idle');
+        const [generatedImage, setGeneratedImage] = useState(null);
+        const [generatedReport, setGeneratedReport] = useState(null);
+        const [errorMsg, setErrorMsg] = useState('');
+        const [imageExportState, setImageExportState] = useState('idle');
+        const [certificateExportState, setCertificateExportState] = useState('idle');
+        const [imageDownloadUrl, setImageDownloadUrl] = useState('');
+        const [certificateDownloadUrl, setCertificateDownloadUrl] = useState('');
+        const [activeModel, setActiveModel] = useState(PREFERRED_IMAGE_MODEL);
+        const [showManifesto, setShowManifesto] = useState(false);
+        const [manifestoVisibleCount, setManifestoVisibleCount] = useState(0);
+
+        // 编年史滚动状态
+        const chronicleRef = useRef(null);
+        const triggeredRef = useRef(false);
+        const imageDownloadUrlRef = useRef('');
+        const certificateDownloadUrlRef = useRef('');
+        const [evoStage, setEvoStage] = useState(0); // 0-5
+
+        const animalDatabase = [
+          { id: 'cat', icon: '🐱', name: '猫' },
+          { id: 'dog', icon: '🐶', name: '狗' },
+          { id: 'hamster', icon: '🐹', name: '仓鼠' },
+          { id: 'cockroach', icon: '🪳', name: '蟑螂' },
+          { id: 'fly', icon: '🪰', name: '苍蝇' },
+          { id: 'monkey', icon: '🐒', name: '猴子' },
+          { id: 'gorilla', icon: '🦍', name: '猩猩' },
+          { id: 'rabbit', icon: '🐰', name: '兔子' },
+          { id: 'fox', icon: '🦊', name: '狐狸' },
+          { id: 'wolf', icon: '🐺', name: '狼' },
+          { id: 'tiger', icon: '🐯', name: '老虎' },
+          { id: 'lion', icon: '🦁', name: '狮子' },
+          { id: 'panda', icon: '🐼', name: '熊猫' },
+          { id: 'capybara', icon: '🦦', name: '水豚' },
+          { id: 'crow', icon: '🐦‍⬛', name: '乌鸦' },
+          { id: 'parrot', icon: '🦜', name: '鹦鹉' },
+          { id: 'duck', icon: '🦆', name: '鸭子' },
+          { id: 'frog', icon: '🐸', name: '青蛙' },
+          { id: 'snake', icon: '🐍', name: '蛇' },
+          { id: 'lizard', icon: '🦎', name: '蜥蜴' },
+          { id: 'octopus', icon: '🐙', name: '章鱼' },
+          { id: 'shark', icon: '🦈', name: '鲨鱼' },
+          { id: 'cow', icon: '🐮', name: '奶牛' },
+          { id: 'pig', icon: '🐷', name: '猪' },
+          { id: 'sheep', icon: '🐑', name: '羊' },
+        ];
+
+        const revokeDownloadUrl = (url) => {
+          if (url && url.startsWith('blob:')) {
+            URL.revokeObjectURL(url);
+          }
+        };
+
+        const clearImageDownload = () => {
+          if (imageDownloadUrlRef.current) {
+            revokeDownloadUrl(imageDownloadUrlRef.current);
+            imageDownloadUrlRef.current = '';
+          }
+          setImageDownloadUrl('');
+        };
+
+        const prepareImageDownload = (imageSrc) => {
+          const downloadUrl = dataUrlToDownloadUrl(imageSrc);
+          if (imageDownloadUrlRef.current && imageDownloadUrlRef.current !== downloadUrl) {
+            revokeDownloadUrl(imageDownloadUrlRef.current);
+          }
+          imageDownloadUrlRef.current = downloadUrl;
+          setImageDownloadUrl(downloadUrl);
+          setImageExportState('ready');
+        };
+
+        const clearCertificateDownload = () => {
+          if (certificateDownloadUrlRef.current) {
+            revokeDownloadUrl(certificateDownloadUrlRef.current);
+            certificateDownloadUrlRef.current = '';
+          }
+          setCertificateDownloadUrl('');
+        };
+
+        const prepareCertificateDownload = (report, animalName) => {
+          const canvas = buildCertificateCanvas({ report, animalName });
+          const downloadUrl = dataUrlToDownloadUrl(canvas.toDataURL('image/png'));
+          if (certificateDownloadUrlRef.current && certificateDownloadUrlRef.current !== downloadUrl) {
+            revokeDownloadUrl(certificateDownloadUrlRef.current);
+          }
+          certificateDownloadUrlRef.current = downloadUrl;
+          setCertificateDownloadUrl(downloadUrl);
+          setCertificateExportState('ready');
+        };
+
+        const handleFileChange = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          if (!file.type.startsWith('image/')) {
+            alert('请上传图片文件 (JPG/PNG/WEBP)');
+            return;
+          }
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result;
+            setUploadedImage(result);
+            const base64 = result.split(',')[1];
+            setBase64Data(base64);
+            setImageMimeType(file.type);
+            setUploadStatus('uploaded');
+          };
+          reader.readAsDataURL(file);
+        };
+
+        const triggerFileInput = () => fileInputRef.current?.click();
+
+        const handleGenerate = async () => {
+          if (!base64Data || !selectedAnimal) return;
+          setProcessState('processing');
+          setErrorMsg('');
+          clearImageDownload();
+          clearCertificateDownload();
+          setImageExportState('idle');
+          setCertificateExportState('idle');
+          setActiveModel(PREFERRED_IMAGE_MODEL);
+          setGeneratedImage(null);
+          setGeneratedReport(null);
+          const normalizedApiKey = DEFAULT_API_KEY.trim();
+
+          if (!normalizedApiKey) {
+            setErrorMsg('API Key 未配置。');
+            setProcessState('error');
+            return;
+          }
+
+          const prompt = `Y2K surreal digital collage, stroboscopic multi-exposure evolution trail. COMPOSITION: A single image containing 5 distinct, overlapping cutout layers of the subject, arranged diagonally from top-left (largest) to bottom-right (smallest). INPUT RULE: Extract and preserve only the main human subject from the uploaded photo. Remove, ignore, and do not recreate any messy or unrelated background elements from the source image, including furniture, room clutter, bystanders, text, decorations, objects, reflections, and environmental distractions. Keep only the person's overall figure, face, hair, clothing silhouette, and key wearable details from the subject. CONTINUITY RULE: All 5 stages must feel like one smooth continuous morph of the same subject, using the same camera angle, same body orientation, same center of gravity, same movement direction, and strongly related silhouette. The transformation must progress in small believable steps with no sudden jump between adjacent stages. Each stage should inherit visible traits from the previous stage before adding more ${selectedAnimal.name} anatomy. SEQUENCE: 1. Top-left: 0% animal, exact original human from input. 2. Overlapping below: around 25% animal, still mostly human, only subtle ${selectedAnimal.name} traits such as ears, eyes, fur/skin texture, tail hint, or slight limb reshaping. 3. Middle: around 50% animal, balanced hybrid with clear continuity from stage 2, body proportions only partially shifted. 4. Overlapping below: around 75% animal, nearly complete ${selectedAnimal.name}, but still visibly evolving out of stage 3 rather than abruptly switching species. 5. Bottom-right: 100% pure ${selectedAnimal.name} body only. MORPHING DETAILS: Keep neighboring stages close in anatomy and pose. Do not make stage 2 or stage 3 too animal too early. Do not make stage 4 suddenly collapse all human structure at once. Let the spine, head angle, limb direction, and body mass migrate gradually across the five layers. CRITICAL DETAILS: Stages 1-4 may preserve visual continuity from the original subject. Stage 5 must contain absolutely no human elements: no human face, no human hands, no human feet, no human posture, no clothing, no crown, no jewelry, no accessories, no humanoid anatomy. Stage 5 must be a realistic full-body ${selectedAnimal.name} in its natural anatomy and stance. Background: Replace the original scene with a clean dreamy pastel pink/purple cloudy sky. Retro 2000s Photoshop layering effect, high contrast.
+
+Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${selectedAnimal.name}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
+
+          const payload = {
+            contents: [{
+              role: 'user',
+              parts: [
+                { text: prompt },
+                { inlineData: { mimeType: imageMimeType || 'image/jpeg', data: base64Data } },
+              ],
+            }],
+            generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+          };
+
+          try {
+            let lastError = null;
+            const useLocalProxy = isLocalHttpSession();
+
+            if (useLocalProxy) {
+              const proxyResponse = await fetch(LOCAL_PROXY_ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  apiKey: normalizedApiKey,
+                  payload,
+                  modelCandidates: IMAGE_MODEL_CANDIDATES,
+                }),
+              });
+
+              const proxyData = await proxyResponse.json().catch(() => ({}));
+              if (!proxyResponse.ok) {
+                throw new Error(proxyData?.error || `本地代理请求失败 (${proxyResponse.status})`);
+              }
+
+              if (proxyData?.imageData) {
+                setActiveModel(proxyData.modelName || PREFERRED_IMAGE_MODEL);
+                setGeneratedImage(`data:${proxyData.mimeType || 'image/png'};base64,${proxyData.imageData}`);
+                setGeneratedReport(parseAiReport(proxyData.responseText) || createFallbackReport(selectedAnimal));
+                setProcessState('complete');
+                return;
+              }
+
+              throw new Error(proxyData?.error || '本地代理未返回图像数据。');
+            }
+
+            for (const modelName of IMAGE_MODEL_CANDIDATES) {
+              const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${normalizedApiKey}`;
+              let response = null;
+
+              for (let i = 0; i < 3; i++) {
+                response = await fetch(url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload),
+                });
+                if (response.ok) break;
+                await new Promise((resolve) => setTimeout(resolve, 1000 * Math.pow(2, i)));
+              }
+
+              if (!response || !response.ok) {
+                let errorDetail = '';
+                try {
+                  const errorJson = await response.json();
+                  errorDetail = errorJson?.error?.message || '';
+                } catch (_) {
+                  errorDetail = '';
+                }
+                const detailText = errorDetail ? ` | ${errorDetail}` : '';
+                lastError = new Error(`API Error: ${response?.status} - ${modelName} 请求失败${detailText}`);
+                continue;
+              }
+
+              const data = await response.json();
+              const blockReason = data?.promptFeedback?.blockReason;
+              if (blockReason) {
+                lastError = new Error(`${modelName} 请求被安全策略拦截：${blockReason}`);
+                continue;
+              }
+
+              const imagePart = getFirstInlineImage(data);
+              const resultBase64 = imagePart?.inlineData?.data;
+              const resultMimeType = imagePart?.inlineData?.mimeType || 'image/png';
+              const responseText = getResponseText(data);
+
+              if (resultBase64) {
+                setActiveModel(modelName);
+                setGeneratedImage(`data:${resultMimeType};base64,${resultBase64}`);
+                setGeneratedReport(parseAiReport(responseText) || createFallbackReport(selectedAnimal));
+                setProcessState('complete');
+                return;
+              }
+
+              const textHint = responseText ? ` 模型回复：${responseText}` : '';
+              lastError = new Error(`${modelName} 未返回图像数据，已尝试下一个模型。${textHint}`);
+            }
+
+            throw lastError || new Error('所有模型都未返回图像数据。');
+          } catch (err) {
+            console.error(err);
+            const localFileHint = window.location.protocol === 'file:'
+              ? ' 当前页面是通过 file:// 直接打开的；请在此目录运行 python3 server.py，然后访问 http://127.0.0.1:8000。'
+              : '';
+            setErrorMsg(`${err.message}${localFileHint}`);
+            setProcessState('error');
+          }
+        };
+
+        const handleReset = () => {
+          clearImageDownload();
+          clearCertificateDownload();
+          setUploadStatus('idle');
+          setUploadedImage(null);
+          setBase64Data(null);
+          setSelectedAnimal(null);
+          setProcessState('idle');
+          setGeneratedImage(null);
+          setGeneratedReport(null);
+          setImageExportState('idle');
+          setCertificateExportState('idle');
+          setActiveModel(PREFERRED_IMAGE_MODEL);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        };
+
+        const scrollToEvolutionLab = () => {
+          document.getElementById('evolution-lab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+
+        useEffect(() => {
+          if (processState !== 'complete' || !generatedImage) {
+            clearImageDownload();
+            setImageExportState('idle');
+            return;
+          }
+
+          try {
+            clearImageDownload();
+            setImageExportState('building');
+            prepareImageDownload(generatedImage);
+          } catch (error) {
+            console.error(error);
+            clearImageDownload();
+            setImageExportState('error');
+          }
+        }, [processState, generatedImage]);
+
+        useEffect(() => {
+          const report = selectedAnimal ? (generatedReport || createFallbackReport(selectedAnimal)) : null;
+          if (processState !== 'complete' || !selectedAnimal || !report) {
+            clearCertificateDownload();
+            setCertificateExportState('idle');
+            return;
+          }
+
+          try {
+            clearCertificateDownload();
+            setCertificateExportState('building');
+            prepareCertificateDownload(report, selectedAnimal.name);
+          } catch (error) {
+            console.error(error);
+            clearCertificateDownload();
+            setCertificateExportState('error');
+          }
+        }, [processState, generatedReport, selectedAnimal]);
+
+        useEffect(() => {
+          return () => {
+            if (imageDownloadUrlRef.current) {
+              revokeDownloadUrl(imageDownloadUrlRef.current);
+              imageDownloadUrlRef.current = '';
+            }
+            if (certificateDownloadUrlRef.current) {
+              revokeDownloadUrl(certificateDownloadUrlRef.current);
+              certificateDownloadUrlRef.current = '';
+            }
+          };
+        }, []);
+
+        // 全局故障震动特效
+        useEffect(() => {
+          if (showManifesto) {
+            setGlitchActive(false);
+            return;
+          }
+
+          let glitchTimeoutId = null;
+          const glitchInterval = setInterval(() => {
+            setGlitchActive(true);
+            glitchTimeoutId = setTimeout(() => setGlitchActive(false), 200);
+          }, 4500);
+
+          return () => {
+            clearInterval(glitchInterval);
+            if (glitchTimeoutId) clearTimeout(glitchTimeoutId);
+            setGlitchActive(false);
+          };
+        }, [showManifesto]);
+
+        // 退化编年史滚动监听
+        useEffect(() => {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              if (entries[0].isIntersecting && !triggeredRef.current) {
+                triggeredRef.current = true;
+                let current = 1;
+                setEvoStage(current);
+                const timer = setInterval(() => {
+                  current += 1;
+                  setEvoStage(current);
+                  if (current >= 5) {
+                    clearInterval(timer);
+                  }
+                }, 800);
+              }
+            },
+            { threshold: 0.4 }
+          );
+
+          if (chronicleRef.current) {
+            observer.observe(chronicleRef.current);
+          }
+          return () => observer.disconnect();
+        }, []);
+
+        useEffect(() => {
+          if (!showManifesto) {
+            setManifestoVisibleCount(0);
+            document.body.style.overflow = '';
+            return;
+          }
+
+          document.body.style.overflow = 'hidden';
+          let current = 0;
+          const timer = setInterval(() => {
+            current += 1;
+            setManifestoVisibleCount(current);
+            if (current >= MANIFESTO_LINES.length) {
+              clearInterval(timer);
+            }
+          }, 140);
+
+          return () => {
+            clearInterval(timer);
+            document.body.style.overflow = '';
+          };
+        }, [showManifesto]);
+
+        useEffect(() => {
+          if (!showManifesto) return;
+
+          const onKeyDown = (event) => {
+            if (event.key === 'Escape') {
+              setShowManifesto(false);
+            }
+          };
+
+          window.addEventListener('keydown', onKeyDown);
+          return () => window.removeEventListener('keydown', onKeyDown);
+        }, [showManifesto]);
+
+        return (
+          <div className={`min-h-screen bg-[#050505] text-white overflow-x-hidden font-sans relative selection:bg-red-600 selection:text-white ${!showManifesto && glitchActive ? 'translate-x-1 translate-y-[-2px]' : ''}`}>
+            {/* 核心 CSS 动画与样式 */}
+            <style dangerouslySetInnerHTML={{__html: `
+              @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700;900&family=Orbitron:wght@500;900&family=ZCOOL+KuaiLe&display=swap');
+              .font-holy { font-family: 'Noto Serif SC', serif; }
+              .font-tech { font-family: 'Orbitron', sans-serif; }
+              .font-meme { font-family: 'ZCOOL KuaiLe', cursive; }
+              .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+              .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 0, 60, 0.5); border-radius: 999px; }
+              .custom-scrollbar::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.06); }
+              .animate-spin-slow { animation: spin 8s linear infinite; }
+
+              /* Glitch Effect */
+              .glitch-text { position: relative; color: #ff003c; text-shadow: 0 0 10px rgba(255,0,60,0.8), 0 0 20px rgba(255,0,60,0.4); font-weight: 900; letter-spacing: -2px; }
+              .glitch-text::before, .glitch-text::after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.8; }
+              .glitch-text::before { color: #0ff; z-index: -1; animation: glitch-anim-1 2s infinite linear alternate-reverse; }
+              .glitch-text::after { color: #ff003c; z-index: -2; animation: glitch-anim-2 3s infinite linear alternate-reverse; }
+              @keyframes glitch-anim-1 { 0% { clip-path: inset(20% 0 80% 0); transform: translate(-4px, 1px); } 20% { clip-path: inset(60% 0 10% 0); transform: translate(4px, -1px); } 40% { clip-path: inset(40% 0 50% 0); transform: translate(-4px, 2px); } 60% { clip-path: inset(80% 0 5% 0); transform: translate(4px, -2px); } 80% { clip-path: inset(10% 0 70% 0); transform: translate(-4px, 1px); } 100% { clip-path: inset(30% 0 40% 0); transform: translate(4px, -1px); } }
+              @keyframes glitch-anim-2 { 0% { clip-path: inset(10% 0 60% 0); transform: translate(4px, -1px); } 20% { clip-path: inset(30% 0 20% 0); transform: translate(-4px, 2px); } 40% { clip-path: inset(70% 0 10% 0); transform: translate(4px, 1px); } 60% { clip-path: inset(20% 0 50% 0); transform: translate(-4px, -2px); } 80% { clip-path: inset(50% 0 30% 0); transform: translate(4px, 1px); } 100% { clip-path: inset(5% 0 80% 0); transform: translate(-4px, -1px); } }
+
+              /* Stage 5 Glitch Shake */
+              .stage-5-glitch { animation: stage5-shake 0.1s infinite; filter: drop-shadow(0 0 15px #ff003c); }
+              @keyframes stage5-shake { 0% { transform: translate(2px, 1px) rotate(0deg); } 10% { transform: translate(-1px, -2px) rotate(-1deg); } 20% { transform: translate(-3px, 0px) rotate(1deg); } 30% { transform: translate(0px, 2px) rotate(0deg); } 40% { transform: translate(1px, -1px) rotate(1deg); } 50% { transform: translate(-1px, 2px) rotate(-1deg); } 60% { transform: translate(-3px, 1px) rotate(0deg); } 70% { transform: translate(2px, 1px) rotate(-1deg); } 80% { transform: translate(-1px, -1px) rotate(1deg); } 90% { transform: translate(2px, 2px) rotate(0deg); } 100% { transform: translate(1px, -2px) rotate(-1deg); } }
+
+              /* Holy Effect */
+              .holy-text { transform-origin: left center; color: #fffde7; text-shadow: 0 0 10px rgba(255,215,0,0.8), 0 0 20px rgba(255,215,0,0.6), 0 0 40px rgba(255,215,0,0.4), 0 0 80px rgba(255,140,0,0.4), 0 0 120px rgba(255,140,0,0.2); animation: holy-pulse 2.5s infinite alternate ease-in-out; }
+              @keyframes holy-pulse { 0% { text-shadow: 0 0 10px #fde047, 0 0 20px #eab308, 0 0 40px #ca8a04; transform: scale(1); } 100% { text-shadow: 0 0 20px #fef08a, 0 0 50px #f59e0b, 0 0 100px #b45309, 0 0 150px #78350f; transform: scale(1.06); } }
+
+              /* Backgrounds */
+              .scanlines { background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0.2)); background-size: 100% 4px; }
+              .manifesto-line { opacity: 0; transform: translateY(18px); filter: blur(8px); }
+              .manifesto-line-visible { opacity: 1; transform: translateY(0); filter: blur(0); transition: opacity 0.45s ease, transform 0.45s ease, filter 0.45s ease; }
+              .manifesto-pulse { animation: manifesto-pulse 3.2s ease-in-out infinite alternate; }
+              @keyframes manifesto-pulse { 0% { box-shadow: 0 0 20px rgba(255,0,60,0.18), 0 0 80px rgba(255,220,90,0.04); } 100% { box-shadow: 0 0 40px rgba(255,0,60,0.28), 0 0 120px rgba(255,220,90,0.08); } }
+              .manifesto-flicker { animation: manifesto-flicker 6s linear infinite; }
+              @keyframes manifesto-flicker { 0%, 100% { opacity: 0.16; } 4% { opacity: 0.24; } 5% { opacity: 0.12; } 6% { opacity: 0.2; } 43% { opacity: 0.14; } 44% { opacity: 0.24; } 45% { opacity: 0.1; } 46% { opacity: 0.18; } }
+              .manifesto-panel { width: min(94vw, 860px); }
+              .manifesto-title { font-size: clamp(1.75rem, 3vw + 0.7rem, 3.2rem); line-height: 1.08; }
+              .manifesto-copy { width: fit-content; max-width: 100%; margin: 0 auto; text-align: center; }
+              .manifesto-copy p { font-size: clamp(0.82rem, 0.45vw + 0.76rem, 1.18rem); line-height: 1.55; letter-spacing: 0.02em; white-space: nowrap; }
+              .manifesto-copy .manifesto-gap { height: 0.55rem; }
+              @media (min-width: 768px) {
+                .manifesto-copy { width: fit-content; }
+                .manifesto-copy .manifesto-gap { height: 0.75rem; }
+              }
+              @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+              .animate-marquee { animation: marquee 20s linear infinite; }
+            `}} />
+
+            {/* --- 全局背景层 --- */}
+            <div className="absolute inset-0 z-0 pointer-events-none opacity-20 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] mix-blend-overlay"></div>
+            <div className="absolute inset-0 z-0 pointer-events-none scanlines opacity-30"></div>
+            <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-red-900/20 blur-[120px] rounded-full pointer-events-none"></div>
+            <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-yellow-600/10 blur-[150px] rounded-full pointer-events-none"></div>
+
+            {showManifesto && (
+              <div className="fixed inset-0 z-[70] flex items-start md:items-center justify-center px-3 md:px-4 py-3 md:py-8 bg-black/78 backdrop-blur-xl overflow-y-auto">
+                <div className="absolute inset-0 scanlines opacity-30 pointer-events-none"></div>
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,0,60,0.12),transparent_55%)] pointer-events-none manifesto-flicker"></div>
+
+                <div className="relative manifesto-panel max-h-[calc(100vh-1.5rem)] md:max-h-[calc(100vh-4rem)] border border-red-500/60 bg-[#060606]/95 manifesto-pulse overflow-hidden flex flex-col">
+                  <div className="absolute inset-0 scanlines opacity-25 pointer-events-none"></div>
+                  <div className="absolute -top-20 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full bg-yellow-300/10 blur-3xl pointer-events-none"></div>
+
+                  <button
+                    onClick={() => setShowManifesto(false)}
+                    className="absolute right-3 top-3 md:right-4 md:top-4 z-10 text-zinc-500 hover:text-white transition-colors"
+                    aria-label="关闭退化宣言"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+
+                  <div className="relative flex flex-col min-h-0 px-4 py-4 md:px-8 md:py-7">
+                    <div className="mb-3 md:mb-4 flex items-center gap-2 md:gap-3 text-red-500 font-tech text-[9px] md:text-[11px] tracking-[0.24em] md:tracking-[0.32em]">
+                      <ScanLine className="w-4 h-4" />
+                      <span>DECLARATION // DEGRADATION_PROTOCOL</span>
+                    </div>
+
+                    <h2 className="manifesto-title font-holy text-[#fff4c2] text-center mb-4 md:mb-6 drop-shadow-[0_0_20px_rgba(255,220,90,0.2)]">
+                      《退化宣言》
+                    </h2>
+
+                    <div className="min-h-0 overflow-y-auto custom-scrollbar pr-1 md:pr-2">
+                      <div className="manifesto-copy text-zinc-100 font-holy">
+                        {MANIFESTO_LINES.map((line, index) => (
+                          line ? (
+                            <p
+                              key={`${line}-${index}`}
+                              className={`manifesto-line ${manifestoVisibleCount > index ? 'manifesto-line-visible' : ''}`}
+                            >
+                              {line}
+                            </p>
+                          ) : (
+                            <div key={`spacer-${index}`} className="manifesto-gap" />
+                          )
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 md:mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 md:gap-4 border-t border-red-500/20 pt-4 md:pt-5">
+                      <p className="text-[10px] md:text-xs font-tech tracking-[0.12em] md:tracking-[0.14em] text-zinc-500">
+                        LET AI HANDLE COMPLEXITY. LET INSTINCT TAKE OVER.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setShowManifesto(false);
+                          scrollToEvolutionLab();
+                        }}
+                        className="px-5 md:px-6 py-2.5 md:py-3 bg-red-600 text-white text-sm md:text-base font-black tracking-[0.16em] md:tracking-[0.2em] uppercase hover:bg-red-500 transition-colors shadow-[0_0_20px_rgba(255,0,60,0.35)]"
+                      >
+                        接受退化
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- 顶部终端状态栏 --- */}
+            <header className="relative z-20 flex justify-between items-center p-4 border-b border-red-900/50 bg-black/50 backdrop-blur-sm font-tech text-xs tracking-widest text-red-500">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 animate-pulse" />
+                <span>SYS.STATE: <span className="text-red-600 font-bold">COMPROMISED</span></span>
+              </div>
+              <div className="hidden md:flex items-center gap-4 opacity-60">
+                <span>AI_EVOLUTION: 99.9%</span>
+                <span>HUMAN_IQ_REMAINING: 12%</span>
+              </div>
+              <div className="flex items-center gap-2 text-yellow-500">
+                <Fingerprint className="w-4 h-4" />
+                <span>CARBON_BASED_ID: VERIFIED</span>
+              </div>
+            </header>
+
+            {/* === 重构的 Hero Section === */}
+            <main className="relative z-10 flex flex-col md:flex-row items-center justify-center gap-8 md:gap-12 lg:gap-20 min-h-[85vh] w-full max-w-[1200px] mx-auto px-6 lg:px-12 pt-12 pb-20">
+              {/* 左侧：主视觉文案排版 */}
+              <div className="w-full md:w-[45%] lg:w-[40%] flex flex-col items-start text-left gap-4 relative z-20 mt-6 md:mt-0 shrink-0">
+                <div className="flex flex-col gap-1 w-full">
+                  <span className="text-xl md:text-3xl font-bold tracking-[0.2em] text-zinc-400">AI的进化已经</span>
+                  <div className="relative inline-block mt-2">
+                    <span className="text-[70px] md:text-[90px] lg:text-[120px] leading-none glitch-text block transform -skew-x-6 drop-shadow-[0_0_20px_rgba(255,0,60,0.5)]" data-text="不可控">不可控</span>
+                    <div className="absolute -bottom-1 md:-bottom-3 left-0 w-[90%] h-1.5 md:h-3 bg-stripes bg-[#ff003c] opacity-80 rounded" style={{backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, #000 10px, #000 20px)'}}></div>
+                  </div>
+                </div>
+
+                <div className="w-full max-w-md h-px bg-gradient-to-r from-red-600 to-transparent my-6 relative opacity-70">
+                  <div className="absolute left-0 top-1/2 -translate-y-1/2 bg-[#050505] pr-4 flex items-center gap-2 text-red-500 py-1 text-sm border-l-4 border-red-600 pl-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span className="tracking-widest font-bold">CRITICAL WARNING</span>
+                  </div>
+                </div>
+
+                <div className="text-base md:text-xl lg:text-2xl font-bold tracking-[0.3em] text-zinc-400 mt-2 mb-2">捍卫碳基生物主权，加入</div>
+
+                <div className="relative w-full flex justify-start py-4">
+                  <div className="absolute top-1/2 left-[20%] -translate-x-1/2 -translate-y-1/2 w-[100%] max-w-lg h-[200%] bg-gradient-to-t from-yellow-500/0 via-yellow-200/10 to-transparent blur-3xl pointer-events-none rounded-full animate-pulse" style={{clipPath: 'polygon(50% 0%, 100% 100%, 0% 100%)', animationDuration: '2.5s'}}></div>
+                  <h2 className="text-4xl md:text-5xl lg:text-[72px] leading-tight font-holy holy-text italic whitespace-nowrap z-10 flex items-center gap-3 relative left-[-10px]">
+                    <Zap className="w-8 h-8 md:w-10 md:h-10 lg:w-14 lg:h-14 text-yellow-400 opacity-80 drop-shadow-[0_0_15px_rgba(250,204,21,1)]" />
+                    光荣的退化
+                  </h2>
+                </div>
+
+                <div className="mt-6 lg:mt-8 flex flex-col sm:flex-row items-start gap-4 lg:gap-6 z-20">
+                  <button
+                    onClick={scrollToEvolutionLab}
+                    className="group relative overflow-hidden border-2 border-black bg-[#ff003c] px-7 py-3.5 text-left text-black shadow-[0_0_24px_rgba(255,0,60,0.45)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_34px_rgba(255,0,60,0.7)]"
+                  >
+                    <div className="absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.18),rgba(0,0,0,0.18)_14px,transparent_14px,transparent_28px)] opacity-80"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-white/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                    <div className="relative flex flex-col">
+                      <span className="font-tech text-[10px] tracking-[0.32em] opacity-75">SIMULATION ENTRY</span>
+                      <span className="mt-1 text-lg lg:text-[22px] font-black tracking-[0.24em] uppercase">模拟退化</span>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setShowManifesto(true)}
+                    className="group relative border border-yellow-500/45 bg-black/10 px-7 py-3.5 text-left transition-all duration-300 hover:-translate-y-0.5 hover:border-yellow-300 hover:bg-yellow-500/6 hover:shadow-[0_0_22px_rgba(234,179,8,0.18)]"
+                  >
+                    <div className="absolute left-3 right-3 top-2 h-px bg-gradient-to-r from-transparent via-yellow-400/70 to-transparent opacity-70"></div>
+                    <div className="absolute left-3 right-3 bottom-2 h-px bg-gradient-to-r from-transparent via-yellow-400/45 to-transparent opacity-55"></div>
+                    <div className="relative flex flex-col">
+                      <span className="font-tech text-[10px] tracking-[0.34em] text-yellow-500/75">SACRED TEXT</span>
+                      <span className="mt-1 font-holy text-base lg:text-xl tracking-[0.18em] text-[#f2d98b] transition-colors duration-300 group-hover:text-[#fff1b8]">阅读宣言</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* 右侧：纯手写生成的 3D ASCII 动态人形 */}
+              <div className="relative w-full md:w-[45%] lg:w-[50%] h-[50vh] md:h-[70vh] lg:h-[80vh] z-0 pointer-events-none opacity-90 mix-blend-screen mt-8 md:mt-0 flex items-center justify-center">
+                <ASCIIParticleHumanoid />
+              </div>
+            </main>
+
+            {/* === 新增模块：退化编年史 (March of Progress) === */}
+            <section ref={chronicleRef} className="relative z-10 w-full max-w-6xl mx-auto px-4 mt-20 mb-32" id="evolution-chronicle">
+              {/* 背景网格线 */}
+              <div className="absolute inset-0 border-y border-cyan-900/30 -z-10 bg-[linear-gradient(to_right,#083344_1px,transparent_1px)] bg-[size:50px_100%] opacity-20"></div>
+
+              <div className="flex items-center gap-4 mb-16 opacity-80 pl-4 border-l-4 border-cyan-500">
+                <ScanLine className="w-6 h-6 text-cyan-400" />
+                <h3 className="font-tech text-cyan-400 tracking-[0.3em] font-bold text-sm md:text-lg">[ 碳基生物演化轨迹 // CARBON_EVOLUTION_RECORD ]</h3>
+              </div>
+
+              {/* 演化图解容器 */}
+              <div className="relative w-full overflow-x-auto lg:overflow-visible pb-10 custom-scrollbar">
+                {/* 底部连接进度线 */}
+                <div className="absolute top-[60%] left-[5%] right-[5%] h-0.5 bg-zinc-800 -z-10 hidden md:block">
+                  <div className="h-full bg-cyan-400 shadow-[0_0_10px_#22d3ee] transition-all duration-700 ease-out" style={{ width: `${(evoStage / 5) * 100}%` }}></div>
+                </div>
+
+                <div className="flex items-end justify-between min-w-[860px] md:min-w-full px-8 gap-4">
+                  {/* 阶段 1：本能猿形 */}
+                  <div className={`flex flex-col items-center transition-all duration-500 transform ${evoStage >= 1 ? 'opacity-100 translate-y-0 text-cyan-400' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                    <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 01: FERAL</div>
+                    <svg viewBox="0 0 100 100" className={`w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square transition-all duration-500 ${evoStage >= 1 ? 'drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : ''}`}>
+                      <circle cx="24" cy="40" r="6" />
+                      <path d="M24,46 Q35,44 42,54 Q48,62 58,68" />
+                      <path d="M40,55 L30,76 L18,76" />
+                      <path d="M47,60 L54,82 L66,90" />
+                      <path d="M56,68 L70,76 L82,76" />
+                      <path d="M33,52 L22,62" opacity="0.55" />
+                    </svg>
+                    <div className="mt-3 text-[10px] md:text-xs tracking-[0.22em] font-tech text-center opacity-80">本能先于语言</div>
+                  </div>
+
+                  {/* 阶段 2：狩猎用火 */}
+                  <div className={`flex flex-col items-center transition-all duration-500 transform delay-100 ${evoStage >= 2 ? 'opacity-100 translate-y-0 text-cyan-400' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                    <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 02: HUNTER</div>
+                    <svg viewBox="0 0 100 100" className={`w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square transition-all duration-500 ${evoStage >= 2 ? 'drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : ''}`}>
+                      <circle cx="34" cy="30" r="6" />
+                      <path d="M34,36 L40,54 L46,74 L48,92" />
+                      <path d="M39,48 L58,58" />
+                      <path d="M46,74 L34,92" />
+                      <path d="M45,74 L58,92" />
+                      <line x1="56" y1="18" x2="88" y2="86" strokeWidth="2" opacity="0.7" />
+                      <path d="M60,26 L67,18 L71,30" strokeWidth="2" />
+                      <path d="M18,82 Q28,72 38,82" opacity="0.45" />
+                    </svg>
+                    <div className="mt-3 text-[10px] md:text-xs tracking-[0.22em] font-tech text-center opacity-80">工具开始改写命运</div>
+                  </div>
+
+                  {/* 阶段 3：秩序与造物 */}
+                  <div className={`flex flex-col items-center transition-all duration-500 transform delay-100 ${evoStage >= 3 ? 'opacity-100 translate-y-0 text-cyan-400' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                    <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 03: CIVIL</div>
+                    <svg viewBox="0 0 100 100" className={`w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square transition-all duration-500 ${evoStage >= 3 ? 'drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : ''}`}>
+                      <circle cx="48" cy="24" r="6" />
+                      <path d="M48,30 L48,56 L48,84" />
+                      <path d="M48,40 L34,52" />
+                      <path d="M48,42 L62,50" />
+                      <path d="M48,84 L40,94" />
+                      <path d="M48,84 L58,94" />
+                      <rect x="61" y="44" width="16" height="12" strokeWidth="2" />
+                      <path d="M20,72 L20,56 L32,56 L32,72" opacity="0.55" />
+                      <path d="M16,72 L36,72" opacity="0.55" />
+                    </svg>
+                    <div className="mt-3 text-[10px] md:text-xs tracking-[0.22em] font-tech text-center opacity-80">文明学会制造秩序</div>
+                  </div>
+
+                  {/* 阶段 4：屏幕驯化 */}
+                  <div className={`flex flex-col items-center transition-all duration-500 transform delay-100 ${evoStage >= 4 ? 'opacity-100 translate-y-0 text-cyan-400' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                    <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 04: SCREEN</div>
+                    <svg viewBox="0 0 100 100" className={`w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square transition-all duration-500 ${evoStage >= 4 ? 'drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : ''}`}>
+                      <circle cx="54" cy="24" r="6" />
+                      <path d="M54,30 Q52,40 54,50 Q58,62 60,76" />
+                      <path d="M53,40 L40,54" />
+                      <path d="M54,43 L70,48" />
+                      <path d="M60,76 L52,92" />
+                      <path d="M60,76 L68,92" />
+                      <rect x="68" y="42" width="18" height="12" strokeWidth="2" />
+                      <path d="M68,54 L86,54" opacity="0.45" />
+                      <path d="M34,90 L86,90" opacity="0.35" />
+                    </svg>
+                    <div className="mt-3 text-[10px] md:text-xs tracking-[0.22em] font-tech text-center opacity-80">注意力被屏幕圈养</div>
+                  </div>
+
+                  {/* 阶段 5：终端寄生 */}
+                  <div className={`flex flex-col items-center transition-all duration-100 transform delay-100 ${evoStage >= 5 ? 'opacity-100 translate-y-0 text-red-500 stage-5-glitch' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                    <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 05: TERMINAL</div>
+                    <svg viewBox="0 0 100 100" className="w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square">
+                      <circle cx="60" cy="34" r="6" />
+                      <path d="M60,40 Q52,52 50,66 Q48,78 50,90" />
+                      <path d="M56,48 L40,58" />
+                      <path d="M58,48 L74,52" />
+                      <path d="M50,90 L40,96" opacity="0.8" />
+                      <path d="M50,90 L58,98" opacity="0.8" />
+                      <rect x="78" y="28" width="14" height="18" fill={evoStage >= 5 ? '#ff003c' : 'none'} opacity={evoStage >= 5 ? 0.8 : 1} />
+                      <line x1="85" y1="46" x2="85" y2="92" strokeWidth="2" opacity="0.55" />
+                      <path d="M66,34 Q73,28 78,32" opacity="0.75" />
+                      {evoStage >= 5 && <path d="M66,34 Q74,18 90,18" strokeDasharray="2 2" stroke="#ff003c" />}
+                      {evoStage >= 5 && <path d="M20,88 Q34,70 46,82" stroke="#ff003c" opacity="0.45" />}
+                    </svg>
+                    <div className="mt-3 text-[10px] md:text-xs tracking-[0.22em] font-tech text-center opacity-90">肉身沦为终端外设</div>
+                  </div>
+                </div>
+              </div>
+
+            </section>
+
+            {/* --- AI 生图互动模块：碳基生物逆演化实验室 --- */}
+            <section className="relative z-10 w-full max-w-4xl mx-auto px-4 mt-12 mb-32" id="evolution-lab">
+              <div className="text-center mb-8 relative">
+                <div className="absolute top-1/2 left-0 w-full h-px bg-zinc-800 -z-10"></div>
+                <span className="bg-[#050505] px-6 text-red-500 font-tech font-bold tracking-[0.3em] text-xl md:text-2xl inline-flex items-center gap-3 border border-red-900/50 rounded-full py-2 shadow-[0_0_20px_rgba(255,0,60,0.1)]">
+                  <Dna className="w-5 h-5 animate-spin-slow" />
+                  退化模拟器 · NANOBANANA CORE
+                  <Dna className="w-5 h-5 animate-spin-slow" />
+                </span>
+              </div>
+
+              {/* 紧凑型表单容器 */}
+              <div className="border border-zinc-800 bg-zinc-950/90 backdrop-blur-md shadow-2xl p-6 relative">
+                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-red-600"></div>
+                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-red-600"></div>
+
+                <input type="file" accept="image/jpeg, image/png, image/webp" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+
+                {(processState === 'idle' || processState === 'error') && (
+                  <div className="flex flex-col gap-6">
+                    {processState === 'error' && (
+                      <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 text-sm flex items-center gap-2 font-tech">
+                        <AlertTriangle className="w-4 h-4" /> 基因重写失败: {errorMsg}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
+                        {uploadedImage ? (
+                          <>
+                            <img src={uploadedImage} alt="Preview" className="w-full h-full object-cover opacity-80" />
+                            <div className="absolute inset-0 bg-green-500/10 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity backdrop-blur-sm">
+                              <RefreshCcw className="w-6 h-6 text-white" />
+                            </div>
+                            <div className="absolute bottom-1 right-1 bg-green-500/80 px-1 rounded text-[8px] font-tech text-black font-bold">DNA LOADED</div>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 text-zinc-500">
+                            <Image className="w-8 h-8" />
+                            <span className="text-xs font-bold tracking-widest">上传碳基自拍</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-xs text-zinc-400 tracking-widest">
+                        <div className="flex justify-between border-b border-zinc-800 pb-2">
+                          <span>BIOMETRIC INPUT:</span>
+                          <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-zinc-800 pb-2">
+                          <span>TARGET SPECIES:</span>
+                          <span className={selectedAnimal ? 'text-yellow-400 font-bold' : 'text-zinc-600'}>{selectedAnimal ? selectedAnimal.name.toUpperCase() : 'AWAITING SELECTION'}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>ENGINE:</span>
+                          <span className="text-cyan-500">{activeModel.toUpperCase()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border border-zinc-800 bg-[#0a0a0a] p-4 rounded">
+                      <div className="text-xs font-tech text-red-500 mb-3 flex items-center gap-2">
+                        <ScanLine className="w-4 h-4" /> SELECT MUTATION VECTOR
+                      </div>
+                      <div className="flex flex-wrap gap-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-2">
+                        {animalDatabase.map((animal) => (
+                          <button key={animal.id} onClick={() => setSelectedAnimal(animal)} className={`px-3 py-1.5 border text-sm rounded flex items-center gap-2 transition-colors ${selectedAnimal?.id === animal.id ? 'border-yellow-500 bg-yellow-500/20 text-yellow-400 font-bold shadow-[0_0_10px_rgba(234,179,8,0.2)]' : 'border-zinc-700 bg-zinc-900/50 text-zinc-400 hover:border-zinc-500 hover:bg-zinc-800 hover:text-white'}`}>
+                            <span className="text-lg leading-none">{animal.icon}</span>
+                            {animal.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button onClick={handleGenerate} disabled={uploadStatus !== 'uploaded' || !selectedAnimal} className={`w-full sm:w-auto px-8 py-3 font-bold tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${uploadStatus === 'uploaded' && selectedAnimal ? 'bg-[#ff003c] text-white hover:bg-red-500 shadow-[0_0_20px_rgba(255,0,60,0.5)] cursor-pointer hover:scale-105' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed border border-zinc-700'}`}>
+                        <Zap className="w-5 h-5" /> 启动碳基逆演化
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {processState === 'processing' && (
+                  <div className="w-full py-24 flex flex-col items-center justify-center relative overflow-hidden bg-[#020202]">
+                    <div className="absolute inset-0 scanlines opacity-40"></div>
+                    <div className="absolute top-1/2 left-0 w-full h-1 bg-red-500 shadow-[0_0_20px_#ff003c] animate-[pulse_0.5s_infinite] -translate-y-1/2"></div>
+                    <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
+                    <h3 className="text-xl font-black tracking-[0.4em] text-white glitch-text relative z-10" data-text="AI引擎重写中">AI引擎重写中</h3>
+                    <p className="text-red-400 font-tech text-xs tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
+                  </div>
+                )}
+
+                {processState === 'complete' && generatedImage && (
+                  <div className="w-full flex flex-col animate-in fade-in zoom-in duration-500">
+                    <div className="bg-black p-3 border-b border-zinc-800 flex justify-between items-center">
+                      <div className="flex items-center gap-2 text-red-500 font-tech text-xs">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        EVOLUTION_TRAJECTORY_RENDERED
+                      </div>
+                      <button onClick={handleReset} className="text-zinc-500 hover:text-white flex items-center gap-2 text-xs transition-colors">
+                        <RefreshCcw className="w-3 h-3" /> 重新重组
+                      </button>
+                    </div>
+
+                    <div className="relative border-x border-b border-zinc-800 bg-[#070707] p-4 md:p-5">
+                      <div className="absolute inset-0 scanlines opacity-15 pointer-events-none"></div>
+                      <div className="relative border border-amber-700/40 bg-[linear-gradient(180deg,rgba(24,19,14,0.9),rgba(8,8,8,0.98))] shadow-[inset_0_0_0_1px_rgba(255,220,150,0.05)]">
+                        <div className="flex items-center justify-between gap-4 border-b border-amber-800/40 px-4 py-3 md:px-5">
+                          <div>
+                            <div className="font-tech text-[10px] tracking-[0.3em] text-amber-500/75">CARBON DEGRADATION ARCHIVE</div>
+                            <div className="mt-1 text-sm md:text-base font-black tracking-[0.18em] text-[#f4dfb2]">碳基生物退化档案</div>
+                          </div>
+                          <div className="border border-red-500/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-red-400">
+                            FILE ACTIVE
+                          </div>
+                        </div>
+
+                        <div className="p-3 md:p-5">
+                          <div className="relative overflow-hidden border border-amber-800/35 bg-black">
+                            <div className="absolute inset-0 border-[6px] border-black/35 z-20 pointer-events-none"></div>
+                            <div className="absolute inset-0 pointer-events-none z-10 bg-[linear-gradient(135deg,rgba(245,208,120,0.08),transparent_28%,transparent_72%,rgba(255,0,60,0.08))]"></div>
+                            <div className="absolute inset-0 pointer-events-none z-10 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.03)_1px,transparent_1px,transparent_18px)] opacity-40"></div>
+
+                            <img src={generatedImage} alt="Evolution Trajectory" className="w-full h-auto max-h-[620px] object-contain relative z-0" />
+
+                            <div className="absolute top-3 left-3 z-30 font-tech text-[10px] text-white/70 tracking-widest flex flex-col bg-black/60 p-2 backdrop-blur-sm border border-white/10">
+                              <span className="text-amber-300 font-bold mb-1">ARCHIVE: OVERLAP_MORPH</span>
+                              <span>SUBJECT: HUMAN_001</span>
+                              <span>DESTINATION: {selectedAnimal.name}</span>
+                              <span>ENGINE: {activeModel.toUpperCase()}</span>
+                            </div>
+
+                            <div className="absolute bottom-3 right-3 z-30 border border-red-500/45 bg-black/55 px-2 py-1 text-[10px] font-tech tracking-[0.22em] text-red-400">
+                              DEGRADED SPECIMEN
+                            </div>
+                          </div>
+
+                          {generatedReport && (
+                            <div className="mt-4 border border-amber-800/35 bg-[#0b0b0b] p-3 md:p-4 relative overflow-hidden">
+                              <div className="absolute inset-0 scanlines opacity-15 pointer-events-none"></div>
+                              <div className="relative">
+                                <div className="flex items-center justify-between gap-3 border-b border-amber-900/40 pb-2.5 mb-3">
+                                  <div>
+                                    <div className="font-tech text-[10px] tracking-[0.28em] text-amber-500/80">CARBON DEGRADATION CERTIFICATE</div>
+                                    <h3 className="mt-1.5 text-base md:text-lg font-black text-[#f3e0b5] tracking-[0.08em]">{selectedAnimal.name}系退化鉴定书</h3>
+                                  </div>
+                                  <div className="shrink-0 border border-amber-400/40 px-2 py-1 text-[10px] font-tech tracking-[0.24em] text-amber-300">APPROVED</div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                  <div className="border border-yellow-900/35 bg-[linear-gradient(180deg,rgba(54,36,14,0.26),rgba(14,12,10,0.9))] p-3 min-h-[126px]">
+                                    <div className="font-tech text-[10px] tracking-[0.24em] text-yellow-500/80 mb-1">退化重点</div>
+                                    <div className="text-yellow-200 text-sm md:text-base font-black leading-6 md:leading-7">{generatedReport.degradationFocus}</div>
+                                  </div>
+                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[126px]">
+                                    <div className="font-tech text-[10px] tracking-[0.24em] text-zinc-500 mb-1">本能属性</div>
+                                    <div className="text-zinc-200 text-[13px] md:text-sm leading-6">{generatedReport.instinctProfile}</div>
+                                  </div>
+                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[126px]">
+                                    <div className="font-tech text-[10px] tracking-[0.24em] text-zinc-500 mb-1">最佳栖息地</div>
+                                    <div className="text-zinc-200 text-[13px] md:text-sm leading-6">{generatedReport.habitat}</div>
+                                  </div>
+                                  <div className="border border-red-900/35 bg-red-950/10 p-3 min-h-[126px]">
+                                    <div className="font-tech text-[10px] tracking-[0.24em] text-red-400/80 mb-1">档案备注</div>
+                                    <div className="text-red-200 text-[13px] md:text-sm leading-6">{generatedReport.memo}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-zinc-900 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="text-zinc-400 text-xs sm:text-sm flex-1"><span className="text-yellow-500 font-bold">逆演化完成。</span></div>
+                      <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+                        <div className="flex flex-col items-end gap-2">
+                          {imageExportState === 'ready' && imageDownloadUrl ? (
+                            <a href={imageDownloadUrl} download={`degradation_evolution_${selectedAnimal.id}.png`} className="px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 bg-white text-black hover:bg-yellow-400">
+                              <Download className="w-4 h-4" />
+                              保存退化演化图
+                            </a>
+                          ) : (
+                            <button disabled className={`px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 ${imageExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
+                              <Download className="w-4 h-4" />
+                              {imageExportState === 'error' ? '演化图准备失败' : '演化图准备中...'}
+                            </button>
+                          )}
+                          <div className="text-[11px] font-tech tracking-[0.16em] min-h-[16px] text-right">
+                            {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
+                            {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
+                            {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
+                            {imageExportState === 'idle' && <span className="text-zinc-500">PNG / GEMINI IMAGE</span>}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-2">
+                          {certificateExportState === 'ready' && certificateDownloadUrl ? (
+                            <a href={certificateDownloadUrl} download={`degradation_certificate_${selectedAnimal.id}.png`} className="px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 border border-amber-500/60 text-amber-200 bg-amber-500/10 hover:bg-amber-500/20">
+                              <Download className="w-4 h-4" />
+                              保存退化鉴定书
+                            </a>
+                          ) : (
+                            <button disabled className={`px-6 py-2 text-sm font-bold tracking-widest uppercase transition-colors flex items-center gap-2 ${certificateExportState === 'building' ? 'bg-zinc-700 text-zinc-300 cursor-wait' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'}`}>
+                              <Download className="w-4 h-4" />
+                              {certificateExportState === 'error' ? '鉴定书准备失败' : '鉴定书准备中...'}
+                            </button>
+                          )}
+                          <div className="text-[11px] font-tech tracking-[0.16em] min-h-[16px] text-right">
+                            {certificateExportState === 'ready' && <span className="text-amber-300">CERTIFICATE READY</span>}
+                            {certificateExportState === 'building' && <span className="text-yellow-400">CERTIFICATE PREPARING</span>}
+                            {certificateExportState === 'error' && <span className="text-red-400">CERTIFICATE EXPORT FAILED</span>}
+                            {certificateExportState === 'idle' && <span className="text-zinc-500">PNG / CERTIFICATE</span>}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* --- 底部修饰边框与跑马灯 --- */}
+            <footer className="fixed bottom-0 left-0 w-full overflow-hidden bg-yellow-400 text-black font-black py-2 border-t-4 border-black z-50 transform -skew-y-1 translate-y-2 pointer-events-none">
+              <div className="flex whitespace-nowrap animate-marquee items-center gap-8 text-sm md:text-base">
+                {Array(8).fill('').map((_, i) => (
+                  <React.Fragment key={i}>
+                    <span>⚠️ 警告：检测到过度思考，建议立刻躺平</span>
+                    <span className="opacity-50">///</span>
+                    <span>碳基生物最后的倔强：早睡早起</span>
+                    <span className="opacity-50">///</span>
+                    <span>AI正在学习你的摸鱼技巧</span>
+                    <span className="opacity-50">///</span>
+                  </React.Fragment>
+                ))}
+              </div>
+            </footer>
+
+            <div className="fixed top-4 left-4 w-16 h-16 border-t-2 border-l-2 border-red-900 z-10 opacity-50 pointer-events-none"></div>
+            <div className="fixed top-4 right-4 w-16 h-16 border-t-2 border-r-2 border-red-900 z-10 opacity-50 pointer-events-none"></div>
+            <div className="fixed bottom-16 left-4 w-16 h-16 border-b-2 border-l-2 border-red-900 z-10 opacity-50 pointer-events-none"></div>
+            <div className="fixed bottom-16 right-4 w-16 h-16 border-b-2 border-r-2 border-red-900 z-10 opacity-50 pointer-events-none"></div>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>
