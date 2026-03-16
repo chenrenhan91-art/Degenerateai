@@ -184,13 +184,9 @@
         return <canvas ref={canvasRef} className="w-full h-full block" />;
       };
 
-      const DEFAULT_API_KEY = 'AIzaSyCBSyPRbCJa3MXDrzgiqsn_Ib5aKqGr2u0';
+      const API_KEY_STORAGE_KEY = 'degenerateai_gemini_api_key';
       const PREFERRED_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
-      const IMAGE_MODEL_CANDIDATES = [
-        PREFERRED_IMAGE_MODEL,
-        'gemini-3-pro-image-preview',
-        'gemini-2.5-flash-image',
-      ];
+      const IMAGE_MODEL_CANDIDATES = [PREFERRED_IMAGE_MODEL];
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
       const MANIFESTO_LINES = [
         '不要再进化了。',
@@ -229,6 +225,58 @@
           .filter((part) => typeof part?.text === 'string' && part.text.trim())
           .map((part) => part.text.trim())
           .join('\n');
+
+      const getStoredApiKey = () => {
+        try {
+          return window.localStorage.getItem(API_KEY_STORAGE_KEY) || '';
+        } catch (_) {
+          return '';
+        }
+      };
+
+      const persistApiKey = (apiKey) => {
+        try {
+          const normalizedApiKey = apiKey.trim();
+          if (normalizedApiKey) {
+            window.localStorage.setItem(API_KEY_STORAGE_KEY, normalizedApiKey);
+          } else {
+            window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+          }
+        } catch (_) {}
+      };
+
+      const maskApiKey = (apiKey) => {
+        const normalizedApiKey = apiKey.trim();
+        if (!normalizedApiKey) return 'MISSING';
+        if (normalizedApiKey.length <= 12) return `${normalizedApiKey.slice(0, 4)}...`;
+        return `${normalizedApiKey.slice(0, 6)}...${normalizedApiKey.slice(-4)}`;
+      };
+
+      const toFriendlyErrorMessage = (message) => {
+        if (!message) return '请求失败。';
+        if (/reported as leaked/i.test(message)) {
+          return '当前 API Key 已被 Google 标记为泄露并拒绝使用。请更换新的 Gemini API Key。';
+        }
+        return message;
+      };
+
+      const summarizeAttemptErrors = (attemptErrors) => {
+        const leakedError = attemptErrors.find((attempt) =>
+          /reported as leaked/i.test(attempt?.detail || '') ||
+          /reported as leaked/i.test(attempt?.message || '')
+        );
+        if (leakedError) {
+          return '当前 API Key 已被 Google 标记为泄露并拒绝使用。请更换新的 Gemini API Key。';
+        }
+
+        return attemptErrors
+          .map((attempt) => {
+            const statusText = attempt?.status ? `API Error: ${attempt.status}` : 'API Error';
+            const detailText = attempt?.detail ? ` | ${attempt.detail}` : '';
+            return `${statusText} - ${attempt.modelName} 请求失败${detailText}`;
+          })
+          .join('；');
+      };
 
       const extractJsonBlock = (rawText) => {
         if (!rawText) return null;
@@ -526,9 +574,12 @@
         return canvas;
       };
 
-      const isLocalHttpSession = () =>
-        window.location.protocol.startsWith('http') &&
-        ['localhost', '127.0.0.1'].includes(window.location.hostname);
+      const shouldUseLocalProxySession = () => {
+        if (!window.location.protocol.startsWith('http')) return false;
+        if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return false;
+        const params = new URLSearchParams(window.location.search);
+        return params.get('useProxy') === '1';
+      };
 
       // --- 主应用组件 ---
       function App() {
@@ -552,6 +603,7 @@
         const [certificateDownloadUrl, setCertificateDownloadUrl] = useState('');
         const [certificateDataUrl, setCertificateDataUrl] = useState('');
         const [activeModel, setActiveModel] = useState(PREFERRED_IMAGE_MODEL);
+        const [apiKey, setApiKey] = useState(() => getStoredApiKey());
         const [showManifesto, setShowManifesto] = useState(false);
         const [manifestoVisibleCount, setManifestoVisibleCount] = useState(0);
         const [mobileSavePreview, setMobileSavePreview] = useState(null);
@@ -669,6 +721,10 @@
           }
         };
 
+        useEffect(() => {
+          persistApiKey(apiKey);
+        }, [apiKey]);
+
         const handleFileChange = (e) => {
           const file = e.target.files[0];
           if (!file) return;
@@ -701,7 +757,7 @@
           setActiveModel(PREFERRED_IMAGE_MODEL);
           setGeneratedImage(null);
           setGeneratedReport(null);
-          const normalizedApiKey = DEFAULT_API_KEY.trim();
+          const normalizedApiKey = apiKey.trim();
 
           if (!normalizedApiKey) {
             setErrorMsg('API Key 未配置。');
@@ -726,7 +782,8 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
           try {
             let lastError = null;
-            const useLocalProxy = isLocalHttpSession();
+            const attemptErrors = [];
+            const useLocalProxy = shouldUseLocalProxySession();
 
             if (useLocalProxy) {
               const proxyResponse = await fetch(LOCAL_PROXY_ENDPOINT, {
@@ -741,7 +798,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
               const proxyData = await proxyResponse.json().catch(() => ({}));
               if (!proxyResponse.ok) {
-                throw new Error(proxyData?.error || `本地代理请求失败 (${proxyResponse.status})`);
+                throw new Error(toFriendlyErrorMessage(proxyData?.error || `本地代理请求失败 (${proxyResponse.status})`));
               }
 
               if (proxyData?.imageData) {
@@ -777,15 +834,24 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 } catch (_) {
                   errorDetail = '';
                 }
-                const detailText = errorDetail ? ` | ${errorDetail}` : '';
-                lastError = new Error(`API Error: ${response?.status} - ${modelName} 请求失败${detailText}`);
+                attemptErrors.push({
+                  modelName,
+                  status: response?.status,
+                  detail: errorDetail,
+                });
+                lastError = new Error(summarizeAttemptErrors(attemptErrors));
                 continue;
               }
 
               const data = await response.json();
               const blockReason = data?.promptFeedback?.blockReason;
               if (blockReason) {
-                lastError = new Error(`${modelName} 请求被安全策略拦截：${blockReason}`);
+                attemptErrors.push({
+                  modelName,
+                  status: response?.status,
+                  detail: `请求被安全策略拦截：${blockReason}`,
+                });
+                lastError = new Error(summarizeAttemptErrors(attemptErrors));
                 continue;
               }
 
@@ -803,16 +869,21 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               }
 
               const textHint = responseText ? ` 模型回复：${responseText}` : '';
-              lastError = new Error(`${modelName} 未返回图像数据，已尝试下一个模型。${textHint}`);
+              attemptErrors.push({
+                modelName,
+                status: response?.status,
+                detail: `未返回图像数据。${textHint}`.trim(),
+              });
+              lastError = new Error(summarizeAttemptErrors(attemptErrors));
             }
 
             throw lastError || new Error('所有模型都未返回图像数据。');
           } catch (err) {
             console.error(err);
             const localFileHint = window.location.protocol === 'file:'
-              ? ' 当前页面是通过 file:// 直接打开的；请在此目录运行 python3 server.py，然后访问 http://127.0.0.1:8000。'
+              ? ' 当前页面是通过 file:// 直接打开的；如需本地 HTTP 访问，请在此目录运行 python3 -m http.server 8000，然后访问 http://127.0.0.1:8000。'
               : '';
-            setErrorMsg(`${err.message}${localFileHint}`);
+            setErrorMsg(`${toFriendlyErrorMessage(err.message)}${localFileHint}`);
             setProcessState('error');
           }
         };
@@ -1357,14 +1428,41 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
                 {(processState === 'idle' || processState === 'error') && (
                   <div className="flex flex-col gap-6">
-                    {processState === 'error' && (
-                      <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 text-sm flex items-center gap-2 font-tech">
-                        <AlertTriangle className="w-4 h-4" /> 基因重写失败: {errorMsg}
-                      </div>
-                    )}
+	                    {processState === 'error' && (
+	                      <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 text-sm flex items-center gap-2 font-tech">
+	                        <AlertTriangle className="w-4 h-4" /> 基因重写失败: {errorMsg}
+	                      </div>
+	                    )}
 
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
+	                    <div className="border border-cyan-900/50 bg-[#031015] p-4 rounded">
+	                      <div className="text-xs font-tech text-cyan-400 mb-3 flex items-center gap-2">
+	                        <Fingerprint className="w-4 h-4" /> GEMINI API KEY
+	                      </div>
+	                      <div className="flex flex-col sm:flex-row gap-3">
+	                        <input
+	                          type="password"
+	                          value={apiKey}
+	                          onChange={(e) => setApiKey(e.target.value)}
+	                          placeholder="粘贴新的 Gemini API Key（仅保存在当前浏览器）"
+	                          autoComplete="off"
+	                          spellCheck={false}
+	                          className="w-full bg-black border border-cyan-900/60 text-cyan-100 rounded px-3 py-3 font-mono text-sm outline-none focus:border-cyan-400"
+	                        />
+	                        <button
+	                          type="button"
+	                          onClick={() => setApiKey('')}
+	                          className="px-4 py-3 border border-zinc-700 text-zinc-300 rounded hover:border-zinc-500 hover:text-white transition-colors"
+	                        >
+	                          清空
+	                        </button>
+	                      </div>
+	                      <div className="mt-2 text-[11px] leading-5 text-cyan-200/70">
+	                        当前源码内置 key 已移除。若报错包含 leaked，说明这把 key 已被 Google 判定泄露，单纯切模型不会恢复。
+	                      </div>
+	                    </div>
+
+	                    <div className="flex flex-col sm:flex-row gap-4">
+	                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
                         {uploadedImage ? (
                           <>
                             <img src={uploadedImage} alt="Preview" className="w-full h-full object-cover opacity-80" />
@@ -1381,10 +1479,16 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                         )}
                       </div>
 
-                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
-                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
-                          <span>BIOMETRIC INPUT:</span>
-                          <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
+	                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
+	                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
+	                          <span>API KEY:</span>
+	                          <span className={apiKey.trim() ? 'text-cyan-400 font-bold' : 'text-red-500'}>
+	                            {maskApiKey(apiKey)}
+	                          </span>
+	                        </div>
+	                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
+	                          <span>BIOMETRIC INPUT:</span>
+	                          <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
                         </div>
                         <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
                           <span>TARGET SPECIES:</span>
@@ -1526,13 +1630,13 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                               {imageExportState === 'error' ? '演化图准备失败' : '演化图准备中...'}
                             </button>
                           )}
-                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
-                            {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
-                            {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
-                            {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
-                            {imageExportState === 'idle' && <span className="text-zinc-500">PNG / GEMINI IMAGE</span>}
-                          </div>
-                        </div>
+	                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
+	                            {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
+	                            {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
+	                            {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
+	                            {imageExportState === 'idle' && <span className="text-zinc-500">PNG / GEMINI 3.1 IMAGE</span>}
+	                          </div>
+	                        </div>
 
                         <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
                           {certificateExportState === 'ready' && certificateDownloadUrl ? (
