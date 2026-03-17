@@ -184,10 +184,17 @@
         return <canvas ref={canvasRef} className="w-full h-full block" />;
       };
 
-      const API_KEY_STORAGE_KEY = 'degenerateai_gemini_api_key';
+      const DEFAULT_API_KEY = '';
+      const DEFAULT_MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/i6tw4olmvv5zr4d7o72apls5omqgnmah';
+      const MAKE_VERTEX_MODEL_LABEL = 'gemini-3.1-flash-image-preview via Make';
       const PREFERRED_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
-      const IMAGE_MODEL_CANDIDATES = [PREFERRED_IMAGE_MODEL];
+      const IMAGE_MODEL_CANDIDATES = [
+        PREFERRED_IMAGE_MODEL,
+        'gemini-3-pro-image-preview',
+        'gemini-2.5-flash-image',
+      ];
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
+      const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
       const MANIFESTO_LINES = [
         '不要再进化了。',
         '不要再被 AI 推着奔跑了。',
@@ -226,56 +233,40 @@
           .map((part) => part.text.trim())
           .join('\n');
 
-      const getStoredApiKey = () => {
-        try {
-          return window.localStorage.getItem(API_KEY_STORAGE_KEY) || '';
-        } catch (_) {
-          return '';
-        }
-      };
-
-      const persistApiKey = (apiKey) => {
-        try {
-          const normalizedApiKey = apiKey.trim();
-          if (normalizedApiKey) {
-            window.localStorage.setItem(API_KEY_STORAGE_KEY, normalizedApiKey);
-          } else {
-            window.localStorage.removeItem(API_KEY_STORAGE_KEY);
-          }
-        } catch (_) {}
-      };
-
-      const maskApiKey = (apiKey) => {
-        const normalizedApiKey = apiKey.trim();
-        if (!normalizedApiKey) return 'MISSING';
-        if (normalizedApiKey.length <= 12) return `${normalizedApiKey.slice(0, 4)}...`;
-        return `${normalizedApiKey.slice(0, 6)}...${normalizedApiKey.slice(-4)}`;
-      };
-
-      const toFriendlyErrorMessage = (message) => {
-        if (!message) return '请求失败。';
-        if (/reported as leaked/i.test(message)) {
-          return '当前 API Key 已被 Google 标记为泄露并拒绝使用。请更换新的 Gemini API Key。';
-        }
-        return message;
-      };
-
-      const summarizeAttemptErrors = (attemptErrors) => {
-        const leakedError = attemptErrors.find((attempt) =>
-          /reported as leaked/i.test(attempt?.detail || '') ||
-          /reported as leaked/i.test(attempt?.message || '')
-        );
-        if (leakedError) {
-          return '当前 API Key 已被 Google 标记为泄露并拒绝使用。请更换新的 Gemini API Key。';
+      const extractRelayResult = (data) => {
+        if (!data || typeof data !== 'object') {
+          return {
+            imageData: null,
+            mimeType: 'image/png',
+            responseText: '',
+            blockReason: null,
+          };
         }
 
-        return attemptErrors
-          .map((attempt) => {
-            const statusText = attempt?.status ? `API Error: ${attempt.status}` : 'API Error';
-            const detailText = attempt?.detail ? ` | ${attempt.detail}` : '';
-            return `${statusText} - ${attempt.modelName} 请求失败${detailText}`;
-          })
-          .join('；');
+        if (data?.imageData) {
+          return {
+            imageData: data.imageData,
+            mimeType: data.mimeType || 'image/png',
+            responseText: data.responseText || data.text || '',
+            blockReason: data.blockReason || null,
+          };
+        }
+
+        const geminiPayload =
+          (data?.candidates && data) ||
+          (data?.response?.candidates && data.response) ||
+          (data?.geminiResponse?.candidates && data.geminiResponse) ||
+          (data?.data?.candidates && data.data) ||
+          null;
+
+        const imagePart = geminiPayload ? getFirstInlineImage(geminiPayload) : null;
+
+        return {
+          imageData: imagePart?.inlineData?.data || null,
+          mimeType: imagePart?.inlineData?.mimeType || data?.mimeType || 'image/png',
+          responseText: data?.responseText || data?.text || (geminiPayload ? getResponseText(geminiPayload) : ''),
+          blockReason: geminiPayload?.promptFeedback?.blockReason || data?.blockReason || null,
+        };
       };
 
       const extractJsonBlock = (rawText) => {
@@ -312,6 +303,13 @@
         instinctProfile: `${animal.name}本能已全面接管，看到群消息先装死，听见下班铃立刻恢复生命体征。`,
         habitat: `适合栖息在树荫、长椅、菜市场、便利店门口和一切能缓慢活着的低压地带。`,
         memo: `去科技化完成。建议少刷通知、多闻空气，按肚子饿和天黑的节奏安排今天。`,
+      });
+
+      const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('图片读取失败。'));
+        reader.readAsDataURL(blob);
       });
 
       const dataUrlToBlob = (dataUrl) => {
@@ -574,12 +572,9 @@
         return canvas;
       };
 
-      const shouldUseLocalProxySession = () => {
-        if (!window.location.protocol.startsWith('http')) return false;
-        if (!['localhost', '127.0.0.1'].includes(window.location.hostname)) return false;
-        const params = new URLSearchParams(window.location.search);
-        return params.get('useProxy') === '1';
-      };
+      const isLocalHttpSession = () =>
+        window.location.protocol.startsWith('http') &&
+        ['localhost', '127.0.0.1'].includes(window.location.hostname);
 
       // --- 主应用组件 ---
       function App() {
@@ -589,6 +584,7 @@
         // 逆演化实验室状态
         const [uploadStatus, setUploadStatus] = useState('idle');
         const [uploadedImage, setUploadedImage] = useState(null);
+        const [uploadedSourceFile, setUploadedSourceFile] = useState(null);
         const [base64Data, setBase64Data] = useState(null);
         const [imageMimeType, setImageMimeType] = useState(null);
 
@@ -602,8 +598,14 @@
         const [imageDownloadUrl, setImageDownloadUrl] = useState('');
         const [certificateDownloadUrl, setCertificateDownloadUrl] = useState('');
         const [certificateDataUrl, setCertificateDataUrl] = useState('');
+        const [makeWebhookUrl, setMakeWebhookUrl] = useState(() => {
+          try {
+            return window.localStorage.getItem(MAKE_WEBHOOK_STORAGE_KEY) || DEFAULT_MAKE_WEBHOOK_URL;
+          } catch (_) {
+            return DEFAULT_MAKE_WEBHOOK_URL;
+          }
+        });
         const [activeModel, setActiveModel] = useState(PREFERRED_IMAGE_MODEL);
-        const [apiKey, setApiKey] = useState(() => getStoredApiKey());
         const [showManifesto, setShowManifesto] = useState(false);
         const [manifestoVisibleCount, setManifestoVisibleCount] = useState(0);
         const [mobileSavePreview, setMobileSavePreview] = useState(null);
@@ -721,10 +723,6 @@
           }
         };
 
-        useEffect(() => {
-          persistApiKey(apiKey);
-        }, [apiKey]);
-
         const handleFileChange = (e) => {
           const file = e.target.files[0];
           if (!file) return;
@@ -732,6 +730,7 @@
             alert('请上传图片文件 (JPG/PNG/WEBP)');
             return;
           }
+          setUploadedSourceFile(file);
           const reader = new FileReader();
           reader.onloadend = () => {
             const result = reader.result;
@@ -757,17 +756,23 @@
           setActiveModel(PREFERRED_IMAGE_MODEL);
           setGeneratedImage(null);
           setGeneratedReport(null);
-          const normalizedApiKey = apiKey.trim();
+          const normalizedMakeWebhookUrl = makeWebhookUrl.trim();
+          const normalizedApiKey = DEFAULT_API_KEY.trim();
 
-          if (!normalizedApiKey) {
+          if (!normalizedMakeWebhookUrl && !isLocalHttpSession() && !normalizedApiKey) {
             setErrorMsg('API Key 未配置。');
             setProcessState('error');
             return;
           }
 
-          const prompt = `Y2K surreal digital collage, stroboscopic multi-exposure evolution trail. COMPOSITION: A single image containing 5 distinct, overlapping cutout layers of the subject, arranged diagonally from top-left (largest) to bottom-right (smallest). INPUT RULE: Extract and preserve only the main human subject from the uploaded photo. Remove, ignore, and do not recreate any messy or unrelated background elements from the source image, including furniture, room clutter, bystanders, text, decorations, objects, reflections, and environmental distractions. Keep only the person's overall figure, face, hair, clothing silhouette, and key wearable details from the subject. CONTINUITY RULE: All 5 stages must feel like one smooth continuous morph of the same subject, using the same camera angle, same body orientation, same center of gravity, same movement direction, and strongly related silhouette. The transformation must progress in small believable steps with no sudden jump between adjacent stages. Each stage should inherit visible traits from the previous stage before adding more ${selectedAnimal.name} anatomy. SEQUENCE: 1. Top-left: 0% animal, exact original human from input. 2. Overlapping below: around 25% animal, still mostly human, only subtle ${selectedAnimal.name} traits such as ears, eyes, fur/skin texture, tail hint, or slight limb reshaping. 3. Middle: around 50% animal, balanced hybrid with clear continuity from stage 2, body proportions only partially shifted. 4. Overlapping below: around 75% animal, nearly complete ${selectedAnimal.name}, but still visibly evolving out of stage 3 rather than abruptly switching species. 5. Bottom-right: 100% pure ${selectedAnimal.name} body only. MORPHING DETAILS: Keep neighboring stages close in anatomy and pose. Do not make stage 2 or stage 3 too animal too early. Do not make stage 4 suddenly collapse all human structure at once. Let the spine, head angle, limb direction, and body mass migrate gradually across the five layers. CRITICAL DETAILS: Stages 1-4 may preserve visual continuity from the original subject. Stage 5 must contain absolutely no human elements: no human face, no human hands, no human feet, no human posture, no clothing, no crown, no jewelry, no accessories, no humanoid anatomy. Stage 5 must be a realistic full-body ${selectedAnimal.name} in its natural anatomy and stance. Background: Replace the original scene with a clean dreamy pastel pink/purple cloudy sky. Retro 2000s Photoshop layering effect, high contrast.
+          const promptAnimalLabel = selectedAnimal.id.replace(/-/g, ' ');
+          const reportAnimalLabel = selectedAnimal.name;
 
-Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${selectedAnimal.name}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
+          const visualPrompt = `Y2K surreal digital collage, stroboscopic multi-exposure evolution trail. COMPOSITION: A single image containing 5 distinct, overlapping cutout layers of the subject, arranged diagonally from top-left (largest) to bottom-right (smallest). INPUT RULE: Extract and preserve only the main human subject from the uploaded photo. Remove, ignore, and do not recreate any messy or unrelated background elements from the source image, including furniture, room clutter, bystanders, text, decorations, objects, reflections, and environmental distractions. Keep only the person's overall figure, face, hair, clothing silhouette, and key wearable details from the subject. CONTINUITY RULE: All 5 stages must feel like one smooth continuous morph of the same subject, using the same camera angle, same body orientation, same center of gravity, same movement direction, and strongly related silhouette. The transformation must progress in small believable steps with no sudden jump between adjacent stages. Each stage should inherit visible traits from the previous stage before adding more ${promptAnimalLabel} anatomy. SEQUENCE: 1. Top-left: 0% animal, exact original human from input. 2. Overlapping below: around 25% animal, still mostly human, only subtle ${promptAnimalLabel} traits such as ears, eyes, fur/skin texture, tail hint, or slight limb reshaping. 3. Middle: around 50% animal, balanced hybrid with clear continuity from stage 2, body proportions only partially shifted. 4. Overlapping below: around 75% animal, nearly complete ${promptAnimalLabel}, but still visibly evolving out of stage 3 rather than abruptly switching species. 5. Bottom-right: 100% pure ${promptAnimalLabel} body only. MORPHING DETAILS: Keep neighboring stages close in anatomy and pose. Do not make stage 2 or stage 3 too animal too early. Do not make stage 4 suddenly collapse all human structure at once. Let the spine, head angle, limb direction, and body mass migrate gradually across the five layers. CRITICAL DETAILS: Stages 1-4 may preserve visual continuity from the original subject. Stage 5 must contain absolutely no human elements: no human face, no human hands, no human feet, no human posture, no clothing, no crown, no jewelry, no accessories, no humanoid anatomy. Stage 5 must be a realistic full-body ${promptAnimalLabel} in its natural anatomy and stance. Background: Replace the original scene with a clean dreamy pastel pink/purple cloudy sky. Retro 2000s Photoshop layering effect, high contrast.`;
+
+          const prompt = `${visualPrompt}
+
+Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${reportAnimalLabel}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
 
           const payload = {
             contents: [{
@@ -782,8 +787,72 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
           try {
             let lastError = null;
-            const attemptErrors = [];
-            const useLocalProxy = shouldUseLocalProxySession();
+            const useLocalProxy = isLocalHttpSession();
+
+            if (normalizedMakeWebhookUrl) {
+              if (!uploadedSourceFile) {
+                throw new Error('Make 中转缺少原始上传图片，请重新上传后再试。');
+              }
+
+              const relayForm = new FormData();
+              relayForm.append('prompt', visualPrompt);
+              relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
+
+              const relayResponse = await fetch(normalizedMakeWebhookUrl, {
+                method: 'POST',
+                body: relayForm,
+              });
+
+              const relayContentType = relayResponse.headers.get('content-type') || '';
+
+              if (!relayResponse.ok) {
+                if (relayContentType.includes('application/json')) {
+                  const relayError = await relayResponse.json().catch(() => ({}));
+                  throw new Error(relayError?.error?.message || relayError?.error || `Make 中转请求失败 (${relayResponse.status})`);
+                }
+
+                const relayText = await relayResponse.text().catch(() => '');
+                throw new Error(relayText || `Make 中转请求失败 (${relayResponse.status})`);
+              }
+
+              if (relayContentType.startsWith('image/')) {
+                const relayBlob = await relayResponse.blob();
+                const relayImageUrl = await blobToDataUrl(relayBlob);
+                if (!relayImageUrl) {
+                  throw new Error('Make 中转已返回图片，但浏览器解析失败。');
+                }
+
+                setActiveModel(MAKE_VERTEX_MODEL_LABEL);
+                setGeneratedImage(relayImageUrl);
+                setGeneratedReport(createFallbackReport(selectedAnimal));
+                setProcessState('complete');
+                return;
+              }
+
+              const relayText = await relayResponse.text().catch(() => '');
+              let relayData = {};
+
+              try {
+                relayData = relayText ? JSON.parse(relayText) : {};
+              } catch (_) {
+                relayData = { text: relayText, responseText: relayText };
+              }
+
+              const relayResult = extractRelayResult(relayData);
+              if (relayResult.blockReason) {
+                throw new Error(`Make 中转后被安全策略拦截：${relayResult.blockReason}`);
+              }
+
+              if (relayResult.imageData) {
+                setActiveModel(relayData.modelVersion || MAKE_VERTEX_MODEL_LABEL);
+                setGeneratedImage(`data:${relayResult.mimeType || 'image/png'};base64,${relayResult.imageData}`);
+                setGeneratedReport(parseAiReport(relayResult.responseText) || createFallbackReport(selectedAnimal));
+                setProcessState('complete');
+                return;
+              }
+
+              throw new Error(relayResult.responseText || 'Make 中转未返回图像数据。');
+            }
 
             if (useLocalProxy) {
               const proxyResponse = await fetch(LOCAL_PROXY_ENDPOINT, {
@@ -798,7 +867,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
               const proxyData = await proxyResponse.json().catch(() => ({}));
               if (!proxyResponse.ok) {
-                throw new Error(toFriendlyErrorMessage(proxyData?.error || `本地代理请求失败 (${proxyResponse.status})`));
+                throw new Error(proxyData?.error || `本地代理请求失败 (${proxyResponse.status})`);
               }
 
               if (proxyData?.imageData) {
@@ -834,24 +903,15 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 } catch (_) {
                   errorDetail = '';
                 }
-                attemptErrors.push({
-                  modelName,
-                  status: response?.status,
-                  detail: errorDetail,
-                });
-                lastError = new Error(summarizeAttemptErrors(attemptErrors));
+                const detailText = errorDetail ? ` | ${errorDetail}` : '';
+                lastError = new Error(`API Error: ${response?.status} - ${modelName} 请求失败${detailText}`);
                 continue;
               }
 
               const data = await response.json();
               const blockReason = data?.promptFeedback?.blockReason;
               if (blockReason) {
-                attemptErrors.push({
-                  modelName,
-                  status: response?.status,
-                  detail: `请求被安全策略拦截：${blockReason}`,
-                });
-                lastError = new Error(summarizeAttemptErrors(attemptErrors));
+                lastError = new Error(`${modelName} 请求被安全策略拦截：${blockReason}`);
                 continue;
               }
 
@@ -869,21 +929,19 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               }
 
               const textHint = responseText ? ` 模型回复：${responseText}` : '';
-              attemptErrors.push({
-                modelName,
-                status: response?.status,
-                detail: `未返回图像数据。${textHint}`.trim(),
-              });
-              lastError = new Error(summarizeAttemptErrors(attemptErrors));
+              lastError = new Error(`${modelName} 未返回图像数据，已尝试下一个模型。${textHint}`);
             }
 
             throw lastError || new Error('所有模型都未返回图像数据。');
           } catch (err) {
             console.error(err);
             const localFileHint = window.location.protocol === 'file:'
-              ? ' 当前页面是通过 file:// 直接打开的；如需本地 HTTP 访问，请在此目录运行 python3 -m http.server 8000，然后访问 http://127.0.0.1:8000。'
+              ? ' 当前页面是通过 file:// 直接打开的；请在此目录运行 python3 server.py，然后访问 http://127.0.0.1:8000。'
               : '';
-            setErrorMsg(`${toFriendlyErrorMessage(err.message)}${localFileHint}`);
+            const makeHint = !makeWebhookUrl.trim()
+              ? ' 如需在国内无 VPN 环境调用 Gemini，请先填写 Make webhook。'
+              : '';
+            setErrorMsg(`${err.message}${makeHint}${localFileHint}`);
             setProcessState('error');
           }
         };
@@ -894,7 +952,9 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
           setMobileSavePreview(null);
           setUploadStatus('idle');
           setUploadedImage(null);
+          setUploadedSourceFile(null);
           setBase64Data(null);
+          setImageMimeType(null);
           setSelectedAnimal(null);
           setProcessState('idle');
           setGeneratedImage(null);
@@ -904,6 +964,18 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
           setActiveModel(PREFERRED_IMAGE_MODEL);
           if (fileInputRef.current) fileInputRef.current.value = '';
         };
+
+        useEffect(() => {
+          try {
+            if (makeWebhookUrl.trim()) {
+              window.localStorage.setItem(MAKE_WEBHOOK_STORAGE_KEY, makeWebhookUrl.trim());
+            } else {
+              window.localStorage.removeItem(MAKE_WEBHOOK_STORAGE_KEY);
+            }
+          } catch (_) {
+            // Ignore storage failures in private / restricted contexts.
+          }
+        }, [makeWebhookUrl]);
 
         const scrollToEvolutionLab = () => {
           document.getElementById('evolution-lab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1110,21 +1182,8 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 .manifesto-copy p { white-space: normal; text-wrap: balance; }
                 .holy-text { transform-origin: center; text-shadow: 0 0 12px rgba(255,215,0,0.75), 0 0 26px rgba(245,158,11,0.38); }
               }
-              @keyframes marquee-loop { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-50%, 0, 0); } }
-              .marquee-shell { overflow: hidden; }
-              .marquee-track {
-                display: flex;
-                width: max-content;
-                min-width: 100%;
-                will-change: transform;
-                animation: marquee-loop 26s linear infinite;
-              }
-              .marquee-segment {
-                display: flex;
-                flex-shrink: 0;
-                align-items: center;
-                white-space: nowrap;
-              }
+              @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+              .animate-marquee { animation: marquee 20s linear infinite; }
             `}} />
 
             {/* --- 全局背景层 --- */}
@@ -1441,41 +1500,37 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
                 {(processState === 'idle' || processState === 'error') && (
                   <div className="flex flex-col gap-6">
-	                    {processState === 'error' && (
-	                      <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 text-sm flex items-center gap-2 font-tech">
-	                        <AlertTriangle className="w-4 h-4" /> 基因重写失败: {errorMsg}
-	                      </div>
-	                    )}
+                    {processState === 'error' && (
+                      <div className="bg-red-900/20 border border-red-500 text-red-400 p-3 text-sm flex items-center gap-2 font-tech">
+                        <AlertTriangle className="w-4 h-4" /> 基因重写失败: {errorMsg}
+                      </div>
+                    )}
 
-	                    <div className="border border-cyan-900/50 bg-[#031015] p-4 rounded">
-	                      <div className="text-xs font-tech text-cyan-400 mb-3 flex items-center gap-2">
-	                        <Fingerprint className="w-4 h-4" /> GEMINI API KEY
-	                      </div>
-	                      <div className="flex flex-col sm:flex-row gap-3">
-	                        <input
-	                          type="password"
-	                          value={apiKey}
-	                          onChange={(e) => setApiKey(e.target.value)}
-	                          placeholder="粘贴新的 Gemini API Key（仅保存在当前浏览器）"
-	                          autoComplete="off"
-	                          spellCheck={false}
-	                          className="w-full bg-black border border-cyan-900/60 text-cyan-100 rounded px-3 py-3 font-mono text-sm outline-none focus:border-cyan-400"
-	                        />
-	                        <button
-	                          type="button"
-	                          onClick={() => setApiKey('')}
-	                          className="px-4 py-3 border border-zinc-700 text-zinc-300 rounded hover:border-zinc-500 hover:text-white transition-colors"
-	                        >
-	                          清空
-	                        </button>
-	                      </div>
-	                      <div className="mt-2 text-[11px] leading-5 text-cyan-200/70">
-	                        当前源码内置 key 已移除。若报错包含 leaked，说明这把 key 已被 Google 判定泄露，单纯切模型不会恢复。
-	                      </div>
-	                    </div>
+                    <div className="border border-cyan-900/35 bg-cyan-950/10 p-3 sm:p-4 rounded">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+                        <div className="text-xs font-tech text-cyan-400 tracking-[0.2em]">CLOUD RELAY / MAKE WEBHOOK</div>
+                        <div className={`text-[10px] font-tech tracking-[0.18em] ${makeWebhookUrl.trim() ? 'text-green-400' : 'text-zinc-500'}`}>
+                          {makeWebhookUrl.trim() ? 'ACTIVE' : 'NOT CONFIGURED'}
+                        </div>
+                      </div>
+                      <input
+                        type="url"
+                        inputMode="url"
+                        autoCapitalize="off"
+                        autoCorrect="off"
+                        spellCheck="false"
+                        placeholder="https://hook.us1.make.com/your-webhook"
+                        value={makeWebhookUrl}
+                        onChange={(event) => setMakeWebhookUrl(event.target.value)}
+                        className="w-full border border-cyan-900/40 bg-black/70 px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan-500"
+                      />
+                      <p className="mt-2 text-[11px] sm:text-xs leading-5 text-zinc-500">
+                        国内无 VPN 时建议填写 Make webhook。填写后页面会优先通过 Make 云端中转调用 Gemini，并自动保存到本机浏览器。
+                      </p>
+                    </div>
 
-	                    <div className="flex flex-col sm:flex-row gap-4">
-	                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
+                    <div className="flex flex-col sm:flex-row gap-4">
+                      <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
                         {uploadedImage ? (
                           <>
                             <img src={uploadedImage} alt="Preview" className="w-full h-full object-cover opacity-80" />
@@ -1492,16 +1547,10 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                         )}
                       </div>
 
-	                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
-	                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
-	                          <span>API KEY:</span>
-	                          <span className={apiKey.trim() ? 'text-cyan-400 font-bold' : 'text-red-500'}>
-	                            {maskApiKey(apiKey)}
-	                          </span>
-	                        </div>
-	                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
-	                          <span>BIOMETRIC INPUT:</span>
-	                          <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
+                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
+                        <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
+                          <span>BIOMETRIC INPUT:</span>
+                          <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
                         </div>
                         <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
                           <span>TARGET SPECIES:</span>
@@ -1643,13 +1692,13 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                               {imageExportState === 'error' ? '演化图准备失败' : '演化图准备中...'}
                             </button>
                           )}
-	                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
-	                            {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
-	                            {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
-	                            {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
-	                            {imageExportState === 'idle' && <span className="text-zinc-500">PNG / GEMINI 3.1 IMAGE</span>}
-	                          </div>
-	                        </div>
+                          <div className="text-[11px] font-tech tracking-[0.12em] sm:tracking-[0.16em] min-h-[16px] text-center sm:text-right">
+                            {imageExportState === 'ready' && <span className="text-green-400">EVOLUTION IMAGE READY</span>}
+                            {imageExportState === 'building' && <span className="text-yellow-400">IMAGE PREPARING</span>}
+                            {imageExportState === 'error' && <span className="text-red-400">IMAGE EXPORT FAILED</span>}
+                            {imageExportState === 'idle' && <span className="text-zinc-500">PNG / GEMINI IMAGE</span>}
+                          </div>
+                        </div>
 
                         <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
                           {certificateExportState === 'ready' && certificateDownloadUrl ? (
@@ -1681,24 +1730,18 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
             </section>
 
             {/* --- 底部修饰边框与跑马灯 --- */}
-            <footer className="hidden md:block fixed bottom-0 left-0 w-full bg-yellow-400 text-black font-black py-2 border-t-4 border-black z-50 pointer-events-none">
-              <div className="marquee-shell">
-                <div className="marquee-track text-sm md:text-base">
-                  {[0, 1].map((segmentIndex) => (
-                    <div key={segmentIndex} className="marquee-segment">
-                      {Array(8).fill('').map((_, i) => (
-                        <React.Fragment key={`${segmentIndex}-${i}`}>
-                          <span>⚠️ 警告：检测到过度思考，建议立刻躺平</span>
-                          <span className="mx-8 opacity-50">///</span>
-                          <span>碳基生物最后的倔强：早睡早起</span>
-                          <span className="mx-8 opacity-50">///</span>
-                          <span>AI正在学习你的摸鱼技巧</span>
-                          <span className="mx-8 opacity-50">///</span>
-                        </React.Fragment>
-                      ))}
-                    </div>
-                  ))}
-                </div>
+            <footer className="hidden md:block fixed bottom-0 left-0 w-full overflow-hidden bg-yellow-400 text-black font-black py-2 border-t-4 border-black z-50 transform -skew-y-1 translate-y-2 pointer-events-none">
+              <div className="flex whitespace-nowrap animate-marquee items-center gap-8 text-sm md:text-base">
+                {Array(8).fill('').map((_, i) => (
+                  <React.Fragment key={i}>
+                    <span>⚠️ 警告：检测到过度思考，建议立刻躺平</span>
+                    <span className="opacity-50">///</span>
+                    <span>碳基生物最后的倔强：早睡早起</span>
+                    <span className="opacity-50">///</span>
+                    <span>AI正在学习你的摸鱼技巧</span>
+                    <span className="opacity-50">///</span>
+                  </React.Fragment>
+                ))}
               </div>
             </footer>
 
