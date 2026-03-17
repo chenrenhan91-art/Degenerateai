@@ -197,6 +197,7 @@
       const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
       const MAKE_RELAY_MODEL = 'gemini-3.1-flash-image-preview';
       const MAKE_RELAY_REGION = 'asia-northeast1';
+      const MAKE_RELAY_RETRY_DELAYS = [0, 3000, 8000, 15000];
       const MANIFESTO_LINES = [
         '不要再进化了。',
         '不要再被 AI 推着奔跑了。',
@@ -437,14 +438,12 @@
           sourceDataUrl = await fileToDataUrl(file);
         }
 
-        const maxEdge = isTouchDevice ? 1280 : 1920;
+        const maxEdge = isTouchDevice ? 1120 : 1920;
         const longestEdge = Math.max(sourceImage.naturalWidth || sourceImage.width, sourceImage.naturalHeight || sourceImage.height);
         const scale = longestEdge > maxEdge ? maxEdge / longestEdge : 1;
-        const targetWidth = Math.max(1, Math.round((sourceImage.naturalWidth || sourceImage.width) * scale));
-        const targetHeight = Math.max(1, Math.round((sourceImage.naturalHeight || sourceImage.height) * scale));
+        let targetWidth = Math.max(1, Math.round((sourceImage.naturalWidth || sourceImage.width) * scale));
+        let targetHeight = Math.max(1, Math.round((sourceImage.naturalHeight || sourceImage.height) * scale));
         const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
         const ctx = canvas.getContext('2d');
 
         if (!ctx) {
@@ -455,25 +454,49 @@
           };
         }
 
-        if (isTouchDevice) {
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, targetWidth, targetHeight);
-        }
-
-        ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
         const outputType = isTouchDevice ? 'image/jpeg' : (file.type === 'image/png' ? 'image/png' : 'image/jpeg');
-
+        const maxBytes = isTouchDevice ? 0.95 * 1024 * 1024 : 2.4 * 1024 * 1024;
         let blob = null;
-        const qualitySteps = outputType === 'image/jpeg'
-          ? (isTouchDevice ? [0.86, 0.78, 0.72] : [0.9])
-          : [0.92];
+        let resizePass = 0;
 
-        for (const quality of qualitySteps) {
-          blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, quality));
-          if (!blob) break;
-          if (!isTouchDevice || blob.size <= 1.35 * 1024 * 1024) {
+        const renderBlob = async (width, height, quality) => {
+          canvas.width = width;
+          canvas.height = height;
+          if (isTouchDevice) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+          } else {
+            ctx.clearRect(0, 0, width, height);
+          }
+          ctx.drawImage(sourceImage, 0, 0, width, height);
+          return await new Promise((resolve) => canvas.toBlob(resolve, outputType, quality));
+        };
+
+        while (resizePass < 4) {
+          const qualitySteps = outputType === 'image/jpeg'
+            ? (isTouchDevice ? [0.84, 0.76, 0.68, 0.6] : [0.9])
+            : [0.92];
+
+          for (const quality of qualitySteps) {
+            blob = await renderBlob(targetWidth, targetHeight, quality);
+            if (!blob) break;
+            if (blob.size <= maxBytes) {
+              break;
+            }
+          }
+
+          if (!blob || blob.size <= maxBytes || !isTouchDevice) {
             break;
           }
+
+          const nextWidth = Math.max(1, Math.round(targetWidth * 0.86));
+          const nextHeight = Math.max(1, Math.round(targetHeight * 0.86));
+          if (nextWidth === targetWidth && nextHeight === targetHeight) {
+            break;
+          }
+          targetWidth = nextWidth;
+          targetHeight = nextHeight;
+          resizePass += 1;
         }
 
         if (!blob) {
@@ -995,20 +1018,42 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 throw new Error('Make 中转缺少原始上传图片，请重新上传后再试。');
               }
 
-              const relayForm = new FormData();
-              relayForm.append('prompt', makeVisualPrompt);
-              relayForm.append('model', MAKE_RELAY_MODEL);
-              relayForm.append('region', MAKE_RELAY_REGION);
-              relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
+              let relayResponse = null;
+              let relayContentType = '';
+              let relayFailureMessage = '';
 
-              const relayResponse = await fetch(normalizedMakeWebhookUrl, {
-                method: 'POST',
-                body: relayForm,
-              });
+              for (let attempt = 0; attempt < MAKE_RELAY_RETRY_DELAYS.length; attempt++) {
+                if (MAKE_RELAY_RETRY_DELAYS[attempt] > 0) {
+                  await new Promise((resolve) => setTimeout(resolve, MAKE_RELAY_RETRY_DELAYS[attempt]));
+                }
 
-              const relayContentType = relayResponse.headers.get('content-type') || '';
-              if (!relayResponse.ok) {
-                let relayFailureMessage = '';
+                const relayForm = new FormData();
+                relayForm.append('prompt', makeVisualPrompt);
+                relayForm.append('model', MAKE_RELAY_MODEL);
+                relayForm.append('region', MAKE_RELAY_REGION);
+                relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
+
+                try {
+                  relayResponse = await fetch(normalizedMakeWebhookUrl, {
+                    method: 'POST',
+                    body: relayForm,
+                    cache: 'no-store',
+                  });
+                } catch (fetchError) {
+                  relayResponse = null;
+                  relayContentType = '';
+                  relayFailureMessage = fetchError?.message || 'Make 中转网络异常';
+                  if (attempt < MAKE_RELAY_RETRY_DELAYS.length - 1) {
+                    continue;
+                  }
+                  throw new Error(relayFailureMessage);
+                }
+
+                relayContentType = relayResponse.headers.get('content-type') || '';
+                if (relayResponse.ok) {
+                  break;
+                }
+
                 if (relayContentType.includes('application/json')) {
                   const relayError = await relayResponse.json().catch(() => ({}));
                   relayFailureMessage = relayError?.error?.message || relayError?.error || '';
@@ -1016,10 +1061,23 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   relayFailureMessage = await relayResponse.text().catch(() => '');
                 }
 
+                const isRetryable =
+                  relayResponse.status === 429 ||
+                  relayResponse.status >= 500 ||
+                  /Scenario failed to complete/i.test(relayFailureMessage) ||
+                  /\[429\]/i.test(relayFailureMessage) ||
+                  /RateLimit/i.test(relayFailureMessage);
+
+                if (!isRetryable || attempt >= MAKE_RELAY_RETRY_DELAYS.length - 1) {
+                  break;
+                }
+              }
+
+              if (!relayResponse?.ok) {
                 if (/Scenario failed to complete/i.test(relayFailureMessage) || /\[429\]/i.test(relayFailureMessage) || /RateLimit/i.test(relayFailureMessage)) {
                   throw new Error('3.1 生图节点暂时拥挤，请稍后重试。');
                 }
-                throw new Error(relayFailureMessage || `Make 中转请求失败 (${relayResponse.status || 'unknown'})`);
+                throw new Error(relayFailureMessage || `Make 中转请求失败 (${relayResponse?.status || 'unknown'})`);
               }
 
               if (relayContentType.startsWith('image/')) {
