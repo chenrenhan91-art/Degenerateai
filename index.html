@@ -358,6 +358,15 @@
         image.src = src;
       });
 
+      const fileToImageElement = async (file) => {
+        const objectUrl = URL.createObjectURL(file);
+        try {
+          return await loadImageElement(objectUrl);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      };
+
       const triggerBrowserDownload = (url, filename) => {
         const anchor = document.createElement('a');
         anchor.href = url;
@@ -402,8 +411,12 @@
       const isWeChatBrowser = () => /MicroMessenger/i.test(getUserAgent());
 
       const normalizeUploadFile = async (file) => {
-        const supportedRasterTypes = ['image/jpeg', 'image/png', 'image/webp'];
-        const shouldNormalize = supportedRasterTypes.includes(file.type) && (file.size > 2.2 * 1024 * 1024 || isTouchLikeDevice());
+        const normalizedType = (file.type || '').toLowerCase();
+        const isTouchDevice = isTouchLikeDevice();
+        const isVectorOrGif = normalizedType === 'image/gif' || normalizedType === 'image/svg+xml';
+        const isLikelyPhonePhoto = /heic|heif|avif/i.test(normalizedType);
+        const canNormalize = normalizedType.startsWith('image/') && !isVectorOrGif;
+        const shouldNormalize = canNormalize && (isTouchDevice || file.size > 2.2 * 1024 * 1024 || isLikelyPhonePhoto);
 
         if (!shouldNormalize) {
           const dataUrl = await fileToDataUrl(file);
@@ -414,9 +427,21 @@
           };
         }
 
-        const sourceDataUrl = await fileToDataUrl(file);
-        const sourceImage = await loadImageElement(sourceDataUrl);
-        const maxEdge = isTouchLikeDevice() ? 1440 : 1920;
+        let sourceImage = null;
+        let sourceDataUrl = '';
+
+        try {
+          sourceImage = await fileToImageElement(file);
+        } catch (_) {
+          sourceDataUrl = await fileToDataUrl(file);
+          sourceImage = await loadImageElement(sourceDataUrl);
+        }
+
+        if (!sourceDataUrl) {
+          sourceDataUrl = await fileToDataUrl(file);
+        }
+
+        const maxEdge = isTouchDevice ? 1280 : 1920;
         const longestEdge = Math.max(sourceImage.naturalWidth || sourceImage.width, sourceImage.naturalHeight || sourceImage.height);
         const scale = longestEdge > maxEdge ? maxEdge / longestEdge : 1;
         const targetWidth = Math.max(1, Math.round((sourceImage.naturalWidth || sourceImage.width) * scale));
@@ -434,9 +459,26 @@
           };
         }
 
+        if (isTouchDevice) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, targetWidth, targetHeight);
+        }
+
         ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
-        const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, 0.9));
+        const outputType = isTouchDevice ? 'image/jpeg' : (file.type === 'image/png' ? 'image/png' : 'image/jpeg');
+
+        let blob = null;
+        const qualitySteps = outputType === 'image/jpeg'
+          ? (isTouchDevice ? [0.86, 0.78, 0.72] : [0.9])
+          : [0.92];
+
+        for (const quality of qualitySteps) {
+          blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, quality));
+          if (!blob) break;
+          if (!isTouchDevice || blob.size <= 1.35 * 1024 * 1024) {
+            break;
+          }
+        }
 
         if (!blob) {
           return {
@@ -446,7 +488,7 @@
           };
         }
 
-        const normalizedName = file.name.replace(/\.(png|jpe?g|webp)$/i, outputType === 'image/png' ? '.png' : '.jpg');
+        const normalizedName = file.name.replace(/\.(png|jpe?g|webp|heic|heif|avif)$/i, outputType === 'image/png' ? '.png' : '.jpg');
         const normalizedFile = new File([blob], normalizedName, { type: outputType });
         const normalizedDataUrl = await blobToDataUrl(blob);
 
@@ -1122,7 +1164,12 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
             const makeHint = !makeWebhookUrl.trim()
               ? ' 如需在国内无 VPN 环境调用 Gemini，请先填写 Make webhook。'
               : '';
-            setErrorMsg(`${err.message}${makeHint}${localFileHint}`);
+            const mobileHint = isTouchLikeDevice()
+              ? (isWeChatBrowser()
+                ? ' 微信内置浏览器对长时间图生图请求不稳定，建议点右上角改用 Safari 或系统浏览器打开。'
+                : ' 手机端请保持页面前台停留，建议上传普通照片而不是 Live Photo 原图。')
+              : '';
+            setErrorMsg(`${err.message}${makeHint}${localFileHint}${mobileHint}`);
             setProcessState('error');
           }
         };
