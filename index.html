@@ -927,6 +927,21 @@
             setUploadStatus('uploaded');
           } catch (error) {
             console.error(error);
+            if (isTouchLikeDevice()) {
+              try {
+                const originalDataUrl = await fileToDataUrl(file);
+                setUploadedSourceFile(file);
+                setUploadedImage(originalDataUrl);
+                const base64 = originalDataUrl.split(',')[1];
+                setBase64Data(base64);
+                setImageMimeType(file.type || 'image/jpeg');
+                setUploadStatus('uploaded');
+                setErrorMsg('移动端图片预处理失败，已自动切换为原图直传模式；生成时间可能更长。');
+                return;
+              } catch (fallbackError) {
+                console.error(fallbackError);
+              }
+            }
             alert('图片预处理失败，请换一张 JPG/PNG/WEBP 图片重试。');
           }
         };
