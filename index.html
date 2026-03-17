@@ -186,7 +186,7 @@
 
       const DEFAULT_API_KEY = '';
       const DEFAULT_MAKE_WEBHOOK_URL = 'https://hook.us2.make.com/i6tw4olmvv5zr4d7o72apls5omqgnmah';
-      const MAKE_VERTEX_MODEL_LABEL = 'gemini-3.1-flash-image-preview via Make';
+      const MAKE_VERTEX_MODEL_LABEL = 'Gemini via Make';
       const PREFERRED_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
       const IMAGE_MODEL_CANDIDATES = [
         PREFERRED_IMAGE_MODEL,
@@ -196,10 +196,11 @@
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
       const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
       const MAKE_RELAY_ATTEMPTS = [
-        { model: 'gemini-3.1-flash-image-preview', region: 'us-central1', waitAfterFailMs: 35000 },
-        { model: 'gemini-3.1-flash-image-preview', region: 'us-east4', waitAfterFailMs: 35000 },
-        { model: 'gemini-3.1-flash-image-preview', region: 'europe-west4', waitAfterFailMs: 35000 },
-        { model: 'gemini-3.1-flash-image-preview', region: 'asia-northeast1', waitAfterFailMs: 0 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'us-east4', waitAfterFailMs: 8000 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'us-central1', waitAfterFailMs: 12000 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'europe-west4', waitAfterFailMs: 12000 },
+        { model: 'gemini-2.5-flash-image', region: 'us-central1', waitAfterFailMs: 4000 },
+        { model: 'gemini-2.5-flash-image', region: 'us-east4', waitAfterFailMs: 0 },
       ];
       const MANIFESTO_LINES = [
         '不要再进化了。',
@@ -1069,7 +1070,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   throw new Error('云端图生图请求已进入排队，但当前等待超时。请保持页面前台停留后重试一次。');
                 }
                 if (/Scenario failed to complete/i.test(relayFailureMessage) || /\[429\]/i.test(relayFailureMessage) || /RateLimit/i.test(relayFailureMessage)) {
-                  throw new Error('3.1 生图节点暂时拥挤。页面已自动切换区域并重试，若仍失败请等待 1-2 分钟后再试。');
+                  throw new Error('云端图生图节点暂时拥挤。页面已优先尝试 3.1，并自动切换区域与稳定备用模型；若仍失败请等待 20-40 秒后再试。');
                 }
                 throw new Error(relayFailureMessage || `Make 中转请求失败 (${relayResponse?.status || 'unknown'})`);
               }
@@ -1081,7 +1082,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   throw new Error('Make 中转已返回图片，但浏览器解析失败。');
                 }
 
-                setActiveModel(`${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
+                setActiveModel(`${activeRelayCandidate.model} via Make / ${activeRelayCandidate.region}`);
                 setGeneratedImage(relayImageUrl);
                 setGeneratedReport(createFallbackReport(selectedAnimal));
                 setProcessState('complete');
@@ -1103,7 +1104,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               }
 
               if (relayResult.imageData) {
-                setActiveModel(relayData.modelVersion || `${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
+                setActiveModel(relayData.modelVersion || `${activeRelayCandidate.model} via Make / ${activeRelayCandidate.region}`);
                 setGeneratedImage(`data:${relayResult.mimeType || 'image/png'};base64,${relayResult.imageData}`);
                 setGeneratedReport(parseAiReport(relayResult.responseText) || createFallbackReport(selectedAnimal));
                 setProcessState('complete');
@@ -1895,7 +1896,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
                     <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
                     <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
-                    <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">3.1 节点拥挤时会自动切换区域并重试，请保持页面停留约 1-2 分钟。</p>
+                    <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">页面会优先尝试 3.1，并自动切换区域与备用模型，请保持停留约 20-40 秒。</p>
                   </div>
                 )}
 
