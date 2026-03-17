@@ -195,6 +195,7 @@
       ];
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
       const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
+      const MAKE_FETCH_TIMEOUT_MS = 45000;
       const MAKE_RELAY_ATTEMPTS = [
         { model: 'gemini-3.1-flash-image-preview', region: 'asia-northeast1', waitAfterFailMs: 35000 },
         { model: 'gemini-3.1-flash-image-preview', region: 'us-central1', waitAfterFailMs: 35000 },
@@ -350,6 +351,21 @@
         reader.onerror = () => reject(new Error('图片读取失败。'));
         reader.readAsDataURL(file);
       });
+
+      const fetchWithTimeout = async (url, options, timeoutMs) => {
+        if (typeof AbortController !== 'function') {
+          return fetch(url, options);
+        }
+
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      };
 
       const loadImageElement = (src) => new Promise((resolve, reject) => {
         const image = new window.Image();
@@ -770,6 +786,8 @@
         const [showManifesto, setShowManifesto] = useState(false);
         const [manifestoVisibleCount, setManifestoVisibleCount] = useState(0);
         const [mobileSavePreview, setMobileSavePreview] = useState(null);
+        const [processQueueLabel, setProcessQueueLabel] = useState('');
+        const [processQueueHistory, setProcessQueueHistory] = useState([]);
 
         // 编年史滚动状态
         const chronicleRef = useRef(null);
@@ -777,6 +795,10 @@
         const imageDownloadUrlRef = useRef('');
         const certificateDownloadUrlRef = useRef('');
         const [evoStage, setEvoStage] = useState(0); // 0-5
+
+        const pushProcessQueueEntry = (message) => {
+          setProcessQueueHistory((prev) => [...prev.slice(-3), message]);
+        };
 
         const animalDatabase = [
           { id: 'cat', icon: '🐱', name: '猫' },
@@ -959,6 +981,8 @@
           setActiveModel(PREFERRED_IMAGE_MODEL);
           setGeneratedImage(null);
           setGeneratedReport(null);
+          setProcessQueueLabel('正在准备上传样本到公共云端节点...');
+          setProcessQueueHistory(['样本读取完成，开始连接公共 3.1 节点。']);
           const normalizedMakeWebhookUrl = makeWebhookUrl.trim();
           const normalizedApiKey = DEFAULT_API_KEY.trim();
 
@@ -1006,18 +1030,41 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
               for (let attempt = 0; attempt < MAKE_RELAY_ATTEMPTS.length; attempt++) {
                 activeRelayCandidate = MAKE_RELAY_ATTEMPTS[attempt];
+                setProcessQueueLabel(`正在尝试公共节点 ${attempt + 1}/${MAKE_RELAY_ATTEMPTS.length}：${activeRelayCandidate.region}`);
+                pushProcessQueueEntry(`尝试 ${attempt + 1}: ${activeRelayCandidate.region} / ${activeRelayCandidate.model}`);
                 const relayForm = new FormData();
                 relayForm.append('prompt', makeVisualPrompt);
                 relayForm.append('model', activeRelayCandidate.model);
                 relayForm.append('region', activeRelayCandidate.region);
                 relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
-                relayResponse = await fetch(normalizedMakeWebhookUrl, {
-                  method: 'POST',
-                  body: relayForm,
-                });
+                try {
+                  relayResponse = await fetchWithTimeout(normalizedMakeWebhookUrl, {
+                    method: 'POST',
+                    body: relayForm,
+                  }, MAKE_FETCH_TIMEOUT_MS);
+                } catch (fetchError) {
+                  relayResponse = null;
+                  relayContentType = '';
+                  relayFailureMessage = fetchError?.name === 'AbortError'
+                    ? `Make 中转超时（${Math.round(MAKE_FETCH_TIMEOUT_MS / 1000)} 秒）`
+                    : (fetchError?.message || 'Make 中转网络异常');
+                  pushProcessQueueEntry(`${activeRelayCandidate.region} ${relayFailureMessage}`);
+
+                  if (attempt >= MAKE_RELAY_ATTEMPTS.length - 1) {
+                    break;
+                  }
+
+                  if (activeRelayCandidate.waitAfterFailMs > 0) {
+                    setProcessQueueLabel(`节点 ${activeRelayCandidate.region} 暂时无响应，${Math.round(activeRelayCandidate.waitAfterFailMs / 1000)} 秒后切换下一个区域...`);
+                    await new Promise((resolve) => setTimeout(resolve, activeRelayCandidate.waitAfterFailMs));
+                  }
+                  continue;
+                }
 
                 relayContentType = relayResponse.headers.get('content-type') || '';
                 if (relayResponse.ok) {
+                  setProcessQueueLabel(`节点 ${activeRelayCandidate.region} 已返回图像，正在解析结果...`);
+                  pushProcessQueueEntry(`${activeRelayCandidate.region} 已响应，正在解析图像数据`);
                   break;
                 }
 
@@ -1030,6 +1077,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 }
 
                 relayFailureMessage = attemptMessage || `Make 中转请求失败 (${relayResponse.status})`;
+                pushProcessQueueEntry(`${activeRelayCandidate.region} ${relayFailureMessage}`);
                 const isRetryable =
                   relayResponse.status === 429 ||
                   relayResponse.status >= 500 ||
@@ -1042,11 +1090,15 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 }
 
                 if (activeRelayCandidate.waitAfterFailMs > 0) {
+                  setProcessQueueLabel(`节点 ${activeRelayCandidate.region} 繁忙，${Math.round(activeRelayCandidate.waitAfterFailMs / 1000)} 秒后切换下一个区域...`);
                   await new Promise((resolve) => setTimeout(resolve, activeRelayCandidate.waitAfterFailMs));
                 }
               }
 
               if (!relayResponse?.ok) {
+                if (/超时/.test(relayFailureMessage)) {
+                  throw new Error('云端图生图请求超时。当前公开节点繁忙，请稍后重试。');
+                }
                 if (/Scenario failed to complete/i.test(relayFailureMessage) || /\[429\]/i.test(relayFailureMessage) || /RateLimit/i.test(relayFailureMessage)) {
                   throw new Error('3.1 生图节点暂时拥挤。页面已自动切换区域并重试，若仍失败请等待 1-2 分钟后再试。');
                 }
@@ -1063,6 +1115,8 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 setActiveModel(`${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
                 setGeneratedImage(relayImageUrl);
                 setGeneratedReport(createFallbackReport(selectedAnimal));
+                setProcessQueueLabel('');
+                setProcessQueueHistory([]);
                 setProcessState('complete');
                 return;
               }
@@ -1085,6 +1139,8 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 setActiveModel(relayData.modelVersion || `${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
                 setGeneratedImage(`data:${relayResult.mimeType || 'image/png'};base64,${relayResult.imageData}`);
                 setGeneratedReport(parseAiReport(relayResult.responseText) || createFallbackReport(selectedAnimal));
+                setProcessQueueLabel('');
+                setProcessQueueHistory([]);
                 setProcessState('complete');
                 return;
               }
@@ -1185,6 +1241,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 : ' 手机端请保持页面前台停留，建议上传普通照片而不是 Live Photo 原图。')
               : '';
             setErrorMsg(`${err.message}${makeHint}${localFileHint}${mobileHint}`);
+            setProcessQueueLabel('');
             setProcessState('error');
           }
         };
@@ -1200,6 +1257,8 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
           setImageMimeType(null);
           setSelectedAnimal(null);
           setProcessState('idle');
+          setProcessQueueLabel('');
+          setProcessQueueHistory([]);
           setGeneratedImage(null);
           setGeneratedReport(null);
           setImageExportState('idle');
@@ -1875,6 +1934,19 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
                     <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
                     <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">3.1 节点拥挤时会自动切换区域并重试，请保持页面停留约 1-2 分钟。</p>
+                    <div className="relative z-10 mt-5 w-[min(92%,540px)] border border-zinc-800 bg-black/60 px-4 py-3 text-left">
+                      <div className="text-[10px] font-tech tracking-[0.24em] text-cyan-400">PUBLIC QUEUE STATUS</div>
+                      <div className="mt-2 text-[11px] sm:text-xs text-zinc-200 leading-6 min-h-[24px]">{processQueueLabel || '正在建立连接...'}</div>
+                      {processQueueHistory.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          {processQueueHistory.map((entry, index) => (
+                            <div key={`${entry}-${index}`} className="text-[10px] sm:text-[11px] font-tech tracking-[0.08em] text-zinc-500">
+                              {entry}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
