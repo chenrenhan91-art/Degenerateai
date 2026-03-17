@@ -195,6 +195,12 @@
       ];
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
       const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
+      const MAKE_RELAY_ATTEMPTS = [
+        { model: 'gemini-3.1-flash-image-preview', region: 'us-central1', waitAfterFailMs: 35000 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'us-east4', waitAfterFailMs: 35000 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'europe-west4', waitAfterFailMs: 35000 },
+        { model: 'gemini-3.1-flash-image-preview', region: 'asia-northeast1', waitAfterFailMs: 0 },
+      ];
       const MANIFESTO_LINES = [
         '不要再进化了。',
         '不要再被 AI 推着奔跑了。',
@@ -338,6 +344,20 @@
         return URL.createObjectURL(blob);
       };
 
+      const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('图片读取失败。'));
+        reader.readAsDataURL(file);
+      });
+
+      const loadImageElement = (src) => new Promise((resolve, reject) => {
+        const image = new window.Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('图片解码失败。'));
+        image.src = src;
+      });
+
       const triggerBrowserDownload = (url, filename) => {
         const anchor = document.createElement('a');
         anchor.href = url;
@@ -355,6 +375,103 @@
         try {
           return window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
         } catch (_) {
+          return false;
+        }
+      };
+
+      const getUserAgent = () => {
+        try {
+          return navigator.userAgent || '';
+        } catch (_) {
+          return '';
+        }
+      };
+
+      const isIOSLikeDevice = () => {
+        try {
+          const ua = getUserAgent();
+          const isIOS = /iP(hone|ad|od)/i.test(ua);
+          const isTouchMac = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
+          return isIOS || isTouchMac;
+        } catch (_) {
+          return false;
+        }
+      };
+
+      const isAndroidLikeDevice = () => /Android/i.test(getUserAgent());
+      const isWeChatBrowser = () => /MicroMessenger/i.test(getUserAgent());
+
+      const normalizeUploadFile = async (file) => {
+        const supportedRasterTypes = ['image/jpeg', 'image/png', 'image/webp'];
+        const shouldNormalize = supportedRasterTypes.includes(file.type) && (file.size > 2.2 * 1024 * 1024 || isTouchLikeDevice());
+
+        if (!shouldNormalize) {
+          const dataUrl = await fileToDataUrl(file);
+          return {
+            file,
+            dataUrl,
+            mimeType: file.type || 'image/jpeg',
+          };
+        }
+
+        const sourceDataUrl = await fileToDataUrl(file);
+        const sourceImage = await loadImageElement(sourceDataUrl);
+        const maxEdge = isTouchLikeDevice() ? 1440 : 1920;
+        const longestEdge = Math.max(sourceImage.naturalWidth || sourceImage.width, sourceImage.naturalHeight || sourceImage.height);
+        const scale = longestEdge > maxEdge ? maxEdge / longestEdge : 1;
+        const targetWidth = Math.max(1, Math.round((sourceImage.naturalWidth || sourceImage.width) * scale));
+        const targetHeight = Math.max(1, Math.round((sourceImage.naturalHeight || sourceImage.height) * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          return {
+            file,
+            dataUrl: sourceDataUrl,
+            mimeType: file.type || 'image/jpeg',
+          };
+        }
+
+        ctx.drawImage(sourceImage, 0, 0, targetWidth, targetHeight);
+        const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, outputType, 0.9));
+
+        if (!blob) {
+          return {
+            file,
+            dataUrl: sourceDataUrl,
+            mimeType: file.type || 'image/jpeg',
+          };
+        }
+
+        const normalizedName = file.name.replace(/\.(png|jpe?g|webp)$/i, outputType === 'image/png' ? '.png' : '.jpg');
+        const normalizedFile = new File([blob], normalizedName, { type: outputType });
+        const normalizedDataUrl = await blobToDataUrl(blob);
+
+        return {
+          file: normalizedFile,
+          dataUrl: normalizedDataUrl,
+          mimeType: outputType,
+        };
+      };
+
+      const shareImageFile = async ({ blob, filename, title }) => {
+        if (!blob || typeof navigator.share !== 'function' || typeof File !== 'function') {
+          return false;
+        }
+
+        const file = new File([blob], filename, { type: blob.type || 'image/png' });
+        if (typeof navigator.canShare === 'function' && !navigator.canShare({ files: [file] })) {
+          return false;
+        }
+
+        try {
+          await navigator.share({ files: [file], title });
+          return true;
+        } catch (error) {
+          if (error?.name === 'AbortError') return 'aborted';
           return false;
         }
       };
@@ -422,20 +539,22 @@
 
         if (isTouchLikeDevice()) {
           const blob = dataUrlToBlob(dataUrl);
-          if (typeof navigator.share === 'function' && typeof File === 'function') {
-            const file = new File([blob], filename, { type: blob.type || 'image/png' });
-            if (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] })) {
-              try {
-                await navigator.share({ files: [file], title });
-                return;
-              } catch (error) {
-                if (error?.name === 'AbortError') return;
-              }
-            }
+          const shareResult = await shareImageFile({ blob, filename, title });
+          if (shareResult === true || shareResult === 'aborted') {
+            return;
           }
 
           if (typeof onPreviewFallback === 'function') {
-            onPreviewFallback({ title, dataUrl });
+            onPreviewFallback({
+              title,
+              dataUrl,
+              filename,
+              downloadUrl: downloadUrl || '',
+              canShare: shareResult !== 'aborted' && typeof navigator.share === 'function' && typeof File === 'function',
+              canDirectDownload: isAndroidLikeDevice() && !isWeChatBrowser(),
+              isIOS: isIOSLikeDevice(),
+              isWeChat: isWeChatBrowser(),
+            });
             return;
           }
 
@@ -723,24 +842,51 @@
           }
         };
 
-        const handleFileChange = (e) => {
+        const handleMobilePreviewShare = async () => {
+          if (!mobileSavePreview?.dataUrl || !mobileSavePreview?.filename) return;
+          const blob = dataUrlToBlob(mobileSavePreview.dataUrl);
+          const shareResult = await shareImageFile({
+            blob,
+            filename: mobileSavePreview.filename,
+            title: mobileSavePreview.title,
+          });
+
+          if (shareResult === true || shareResult === 'aborted') {
+            if (shareResult === true) {
+              setMobileSavePreview(null);
+            }
+          }
+        };
+
+        const handleMobilePreviewDownload = () => {
+          if (!mobileSavePreview?.downloadUrl || !mobileSavePreview?.filename) return;
+          triggerBrowserDownload(mobileSavePreview.downloadUrl, mobileSavePreview.filename);
+        };
+
+        const handleMobilePreviewOpen = () => {
+          if (!mobileSavePreview?.dataUrl || !mobileSavePreview?.title) return;
+          openPreviewWindow(mobileSavePreview.dataUrl, mobileSavePreview.title);
+        };
+
+        const handleFileChange = async (e) => {
           const file = e.target.files[0];
           if (!file) return;
           if (!file.type.startsWith('image/')) {
             alert('请上传图片文件 (JPG/PNG/WEBP)');
             return;
           }
-          setUploadedSourceFile(file);
-          const reader = new FileReader();
-          reader.onloadend = () => {
-            const result = reader.result;
-            setUploadedImage(result);
-            const base64 = result.split(',')[1];
+          try {
+            const normalized = await normalizeUploadFile(file);
+            setUploadedSourceFile(normalized.file);
+            setUploadedImage(normalized.dataUrl);
+            const base64 = normalized.dataUrl.split(',')[1];
             setBase64Data(base64);
-            setImageMimeType(file.type);
+            setImageMimeType(normalized.mimeType);
             setUploadStatus('uploaded');
-          };
-          reader.readAsDataURL(file);
+          } catch (error) {
+            console.error(error);
+            alert('图片预处理失败，请换一张 JPG/PNG/WEBP 图片重试。');
+          }
         };
 
         const triggerFileInput = () => fileInputRef.current?.click();
@@ -774,6 +920,8 @@
 
 Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${reportAnimalLabel}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
 
+          const makeVisualPrompt = `Y2K surreal digital collage with 5 overlapping full-body layers of the same person arranged diagonally from top-left to bottom-right. Use the uploaded photo as the identity source and ignore the original background clutter. Stage 1 is fully human. Stage 2 is about 25% ${promptAnimalLabel}. Stage 3 is a 50% hybrid. Stage 4 is about 75% ${promptAnimalLabel} and must still clearly evolve from stage 3. Stage 5 is a natural full-body ${promptAnimalLabel} with absolutely no human anatomy, clothing, or accessories. Keep the same camera angle, pose direction, body-mass continuity, and clean silhouette transition across all five stages. Dreamy pastel pink and purple cloudy sky, retro 2000s Photoshop layering, high contrast, no text, no watermark, no extra objects.`;
+
           const payload = {
             contents: [{
               role: 'user',
@@ -794,25 +942,58 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 throw new Error('Make 中转缺少原始上传图片，请重新上传后再试。');
               }
 
-              const relayForm = new FormData();
-              relayForm.append('prompt', visualPrompt);
-              relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
+              let relayResponse = null;
+              let relayContentType = '';
+              let relayFailureMessage = '';
+              let activeRelayCandidate = MAKE_RELAY_ATTEMPTS[0];
 
-              const relayResponse = await fetch(normalizedMakeWebhookUrl, {
-                method: 'POST',
-                body: relayForm,
-              });
+              for (let attempt = 0; attempt < MAKE_RELAY_ATTEMPTS.length; attempt++) {
+                activeRelayCandidate = MAKE_RELAY_ATTEMPTS[attempt];
+                const relayForm = new FormData();
+                relayForm.append('prompt', makeVisualPrompt);
+                relayForm.append('model', activeRelayCandidate.model);
+                relayForm.append('region', activeRelayCandidate.region);
+                relayForm.append('referenceImage', uploadedSourceFile, uploadedSourceFile.name || 'reference-image.png');
+                relayResponse = await fetch(normalizedMakeWebhookUrl, {
+                  method: 'POST',
+                  body: relayForm,
+                });
 
-              const relayContentType = relayResponse.headers.get('content-type') || '';
-
-              if (!relayResponse.ok) {
-                if (relayContentType.includes('application/json')) {
-                  const relayError = await relayResponse.json().catch(() => ({}));
-                  throw new Error(relayError?.error?.message || relayError?.error || `Make 中转请求失败 (${relayResponse.status})`);
+                relayContentType = relayResponse.headers.get('content-type') || '';
+                if (relayResponse.ok) {
+                  break;
                 }
 
-                const relayText = await relayResponse.text().catch(() => '');
-                throw new Error(relayText || `Make 中转请求失败 (${relayResponse.status})`);
+                let attemptMessage = '';
+                if (relayContentType.includes('application/json')) {
+                  const relayError = await relayResponse.json().catch(() => ({}));
+                  attemptMessage = relayError?.error?.message || relayError?.error || '';
+                } else {
+                  attemptMessage = await relayResponse.text().catch(() => '');
+                }
+
+                relayFailureMessage = attemptMessage || `Make 中转请求失败 (${relayResponse.status})`;
+                const isRetryable =
+                  relayResponse.status === 429 ||
+                  relayResponse.status >= 500 ||
+                  /Scenario failed to complete/i.test(relayFailureMessage) ||
+                  /\[429\]/i.test(relayFailureMessage) ||
+                  /RateLimit/i.test(relayFailureMessage);
+
+                if (!isRetryable || attempt >= MAKE_RELAY_ATTEMPTS.length - 1) {
+                  break;
+                }
+
+                if (activeRelayCandidate.waitAfterFailMs > 0) {
+                  await new Promise((resolve) => setTimeout(resolve, activeRelayCandidate.waitAfterFailMs));
+                }
+              }
+
+              if (!relayResponse?.ok) {
+                if (/Scenario failed to complete/i.test(relayFailureMessage) || /\[429\]/i.test(relayFailureMessage) || /RateLimit/i.test(relayFailureMessage)) {
+                  throw new Error('3.1 生图节点暂时拥挤。页面已自动切换区域并重试，若仍失败请等待 1-2 分钟后再试。');
+                }
+                throw new Error(relayFailureMessage || `Make 中转请求失败 (${relayResponse?.status || 'unknown'})`);
               }
 
               if (relayContentType.startsWith('image/')) {
@@ -822,7 +1003,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   throw new Error('Make 中转已返回图片，但浏览器解析失败。');
                 }
 
-                setActiveModel(MAKE_VERTEX_MODEL_LABEL);
+                setActiveModel(`${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
                 setGeneratedImage(relayImageUrl);
                 setGeneratedReport(createFallbackReport(selectedAnimal));
                 setProcessState('complete');
@@ -844,7 +1025,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               }
 
               if (relayResult.imageData) {
-                setActiveModel(relayData.modelVersion || MAKE_VERTEX_MODEL_LABEL);
+                setActiveModel(relayData.modelVersion || `${MAKE_VERTEX_MODEL_LABEL} / ${activeRelayCandidate.region}`);
                 setGeneratedImage(`data:${relayResult.mimeType || 'image/png'};base64,${relayResult.imageData}`);
                 setGeneratedReport(parseAiReport(relayResult.responseText) || createFallbackReport(selectedAnimal));
                 setProcessState('complete');
@@ -1174,6 +1355,11 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               .manifesto-copy { width: fit-content; max-width: 100%; margin: 0 auto; text-align: center; }
               .manifesto-copy p { font-size: clamp(0.82rem, 0.45vw + 0.76rem, 1.18rem); line-height: 1.55; letter-spacing: 0.02em; white-space: nowrap; }
               .manifesto-copy .manifesto-gap { height: 0.55rem; }
+              .mobile-engine-text { overflow-wrap: anywhere; word-break: break-word; text-align: right; line-height: 1.4; max-width: 62%; }
+              .mobile-archive-meta { max-width: min(68vw, 280px); line-height: 1.45; }
+              .mobile-action-dock { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+              .mobile-save-sheet { max-height: min(88svh, 820px); }
+              .mobile-save-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
               @media (min-width: 768px) {
                 .manifesto-copy { width: fit-content; }
                 .manifesto-copy .manifesto-gap { height: 0.75rem; }
@@ -1181,6 +1367,12 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               @media (max-width: 767px) {
                 .manifesto-copy p { white-space: normal; text-wrap: balance; }
                 .holy-text { transform-origin: center; text-shadow: 0 0 12px rgba(255,215,0,0.75), 0 0 26px rgba(245,158,11,0.38); }
+              }
+              @media (max-width: 639px) {
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+                .mobile-engine-text { max-width: 58%; font-size: 10px; letter-spacing: 0.08em; }
+                .mobile-archive-meta { max-width: calc(100% - 0.75rem); font-size: 8px; letter-spacing: 0.12em; }
+                .mobile-save-actions { grid-template-columns: 1fr; }
               }
               @keyframes marquee { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
               .animate-marquee { animation: marquee 20s linear infinite; }
@@ -1258,7 +1450,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
             {mobileSavePreview && (
               <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center px-3 py-3 sm:px-4 sm:py-6 bg-black/88 backdrop-blur-xl">
                 <div className="absolute inset-0 scanlines opacity-20 pointer-events-none"></div>
-                <div className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-[#090909] shadow-[0_0_30px_rgba(0,0,0,0.45)] overflow-hidden">
+                <div className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-[#090909] shadow-[0_0_30px_rgba(0,0,0,0.45)] overflow-hidden mobile-save-sheet">
                   <button
                     onClick={() => setMobileSavePreview(null)}
                     className="absolute right-3 top-3 z-10 text-zinc-500 hover:text-white transition-colors"
@@ -1271,23 +1463,51 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <div className="font-tech text-[10px] tracking-[0.24em] text-amber-400/80">SAVE PREVIEW</div>
                     <h3 className="mt-2 text-base sm:text-lg font-black text-white">{mobileSavePreview.title}</h3>
                     <p className="mt-2 text-xs sm:text-sm leading-6 text-zinc-400">
-                      手机端可直接长按下方图片保存。若浏览器支持，也可以使用右上角或系统分享菜单导出。
+                      {mobileSavePreview.isWeChat
+                        ? '微信内置浏览器通常会限制直接下载，建议先点“新窗口打开”，再长按图片保存。'
+                        : mobileSavePreview.isIOS
+                          ? 'iPhone / iPad 建议优先使用系统分享，或点“新窗口打开”后长按图片保存。'
+                          : '安卓浏览器可先尝试“直接保存”，若未弹出下载，再长按下方图片保存。'}
                     </p>
                   </div>
 
-                  <div className="p-3 sm:p-4">
+                  <div className="p-3 sm:p-4 overflow-y-auto">
                     <div className="rounded-xl border border-white/10 bg-black overflow-hidden">
                       <img src={mobileSavePreview.dataUrl} alt={mobileSavePreview.title} className="block w-full h-auto max-h-[62vh] object-contain" />
                     </div>
                   </div>
 
-                  <div className="px-4 pb-4 sm:px-5 sm:pb-5 flex justify-end">
-                    <button
-                      onClick={() => setMobileSavePreview(null)}
-                      className="px-5 py-2.5 text-sm font-bold tracking-[0.16em] uppercase bg-white text-black"
-                    >
-                      完成
-                    </button>
+                  <div className="px-4 pb-4 sm:px-5 sm:pb-5 mobile-action-dock">
+                    <div className="mobile-save-actions">
+                      {mobileSavePreview.canShare && (
+                        <button
+                          onClick={handleMobilePreviewShare}
+                          className="px-5 py-3 text-sm font-bold tracking-[0.14em] uppercase border border-cyan-400/40 text-cyan-200 bg-cyan-500/10"
+                        >
+                          系统分享
+                        </button>
+                      )}
+                      {mobileSavePreview.canDirectDownload && mobileSavePreview.downloadUrl && (
+                        <button
+                          onClick={handleMobilePreviewDownload}
+                          className="px-5 py-3 text-sm font-bold tracking-[0.14em] uppercase bg-white text-black"
+                        >
+                          直接保存
+                        </button>
+                      )}
+                      <button
+                        onClick={handleMobilePreviewOpen}
+                        className="px-5 py-3 text-sm font-bold tracking-[0.14em] uppercase border border-amber-400/45 text-amber-200 bg-amber-500/10"
+                      >
+                        新窗口打开
+                      </button>
+                      <button
+                        onClick={() => setMobileSavePreview(null)}
+                        className="px-5 py-3 text-sm font-bold tracking-[0.14em] uppercase bg-zinc-800 text-zinc-200"
+                      >
+                        完成
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1547,7 +1767,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                         )}
                       </div>
 
-                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest">
+                      <div className="flex-1 border border-zinc-800 bg-[#020202] p-4 flex flex-col justify-center gap-3 font-tech text-[10px] sm:text-xs text-zinc-400 tracking-[0.16em] sm:tracking-widest min-w-0">
                         <div className="flex justify-between gap-3 border-b border-zinc-800 pb-2">
                           <span>BIOMETRIC INPUT:</span>
                           <span className={uploadStatus === 'uploaded' ? 'text-green-500 font-bold' : 'text-red-500'}>{uploadStatus === 'uploaded' ? 'VERIFIED' : 'MISSING'}</span>
@@ -1556,9 +1776,9 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                           <span>TARGET SPECIES:</span>
                           <span className={selectedAnimal ? 'text-yellow-400 font-bold' : 'text-zinc-600'}>{selectedAnimal ? selectedAnimal.name.toUpperCase() : 'AWAITING SELECTION'}</span>
                         </div>
-                        <div className="flex justify-between gap-3">
+                        <div className="flex items-start justify-between gap-3">
                           <span>ENGINE:</span>
-                          <span className="text-cyan-500">{activeModel.toUpperCase()}</span>
+                          <span className="text-cyan-500 mobile-engine-text">{activeModel.toUpperCase()}</span>
                         </div>
                       </div>
                     </div>
@@ -1592,6 +1812,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
                     <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
                     <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
+                    <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">3.1 节点拥挤时会自动切换区域并重试，请保持页面停留约 1-2 分钟。</p>
                   </div>
                 )}
 
@@ -1626,9 +1847,9 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                             <div className="absolute inset-0 pointer-events-none z-10 bg-[linear-gradient(135deg,rgba(245,208,120,0.08),transparent_28%,transparent_72%,rgba(255,0,60,0.08))]"></div>
                             <div className="absolute inset-0 pointer-events-none z-10 bg-[repeating-linear-gradient(90deg,rgba(255,255,255,0.03),rgba(255,255,255,0.03)_1px,transparent_1px,transparent_18px)] opacity-40"></div>
 
-                            <img src={generatedImage} alt="Evolution Trajectory" className="w-full h-auto max-h-[440px] sm:max-h-[620px] object-contain relative z-0" />
+                            <img src={generatedImage} alt="Evolution Trajectory" className="w-full h-auto max-h-[54vh] sm:max-h-[620px] object-contain relative z-0" />
 
-                            <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-30 max-w-[calc(100%-1rem)] sm:max-w-none font-tech text-[9px] sm:text-[10px] text-white/70 tracking-[0.16em] sm:tracking-widest flex flex-col bg-black/60 p-1.5 sm:p-2 backdrop-blur-sm border border-white/10">
+                            <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-30 max-w-[calc(100%-1rem)] sm:max-w-none font-tech text-[9px] sm:text-[10px] text-white/70 tracking-[0.16em] sm:tracking-widest flex flex-col bg-black/60 p-1.5 sm:p-2 backdrop-blur-sm border border-white/10 mobile-archive-meta">
                               <span className="text-amber-300 font-bold mb-1">ARCHIVE: OVERLAP_MORPH</span>
                               <span>SUBJECT: HUMAN_001</span>
                               <span>DESTINATION: {selectedAnimal.name}</span>
@@ -1653,21 +1874,21 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                  <div className="border border-yellow-900/35 bg-[linear-gradient(180deg,rgba(54,36,14,0.26),rgba(14,12,10,0.9))] p-3 min-h-[126px]">
+                                  <div className="border border-yellow-900/35 bg-[linear-gradient(180deg,rgba(54,36,14,0.26),rgba(14,12,10,0.9))] p-3 min-h-[110px] md:min-h-[126px]">
                                     <div className="font-tech text-[10px] tracking-[0.24em] text-yellow-500/80 mb-1">退化重点</div>
                                     <div className="text-yellow-200 text-sm md:text-base font-black leading-6 md:leading-7">{generatedReport.degradationFocus}</div>
                                   </div>
-                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[126px]">
+                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[110px] md:min-h-[126px]">
                                     <div className="font-tech text-[10px] tracking-[0.24em] text-zinc-500 mb-1">本能属性</div>
-                                    <div className="text-zinc-200 text-[13px] md:text-sm leading-6">{generatedReport.instinctProfile}</div>
+                                    <div className="text-zinc-200 text-[12px] md:text-sm leading-5 md:leading-6">{generatedReport.instinctProfile}</div>
                                   </div>
-                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[126px]">
+                                  <div className="border border-zinc-800 bg-zinc-950/70 p-3 min-h-[110px] md:min-h-[126px]">
                                     <div className="font-tech text-[10px] tracking-[0.24em] text-zinc-500 mb-1">最佳栖息地</div>
-                                    <div className="text-zinc-200 text-[13px] md:text-sm leading-6">{generatedReport.habitat}</div>
+                                    <div className="text-zinc-200 text-[12px] md:text-sm leading-5 md:leading-6">{generatedReport.habitat}</div>
                                   </div>
-                                  <div className="border border-red-900/35 bg-red-950/10 p-3 min-h-[126px]">
+                                  <div className="border border-red-900/35 bg-red-950/10 p-3 min-h-[110px] md:min-h-[126px]">
                                     <div className="font-tech text-[10px] tracking-[0.24em] text-red-400/80 mb-1">档案备注</div>
-                                    <div className="text-red-200 text-[13px] md:text-sm leading-6">{generatedReport.memo}</div>
+                                    <div className="text-red-200 text-[12px] md:text-sm leading-5 md:leading-6">{generatedReport.memo}</div>
                                   </div>
                                 </div>
                               </div>
@@ -1677,7 +1898,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                       </div>
                     </div>
 
-                    <div className="bg-zinc-900 p-4 flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="bg-zinc-900 p-4 flex flex-col items-stretch sm:flex-row sm:items-center justify-between gap-4 mobile-action-dock">
                       <div className="text-zinc-400 text-xs sm:text-sm flex-1"><span className="text-yellow-500 font-bold">逆演化完成。</span></div>
                       <div className="flex flex-col sm:flex-row gap-3 shrink-0 w-full sm:w-auto">
                         <div className="flex flex-col items-stretch sm:items-end gap-2 w-full sm:w-auto">
