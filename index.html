@@ -1003,9 +1003,13 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
               let relayContentType = '';
               let relayFailureMessage = '';
               let activeRelayCandidate = MAKE_RELAY_ATTEMPTS[0];
+              let relayQueued = false;
+              let relayTextPayload = '';
 
               for (let attempt = 0; attempt < MAKE_RELAY_ATTEMPTS.length; attempt++) {
                 activeRelayCandidate = MAKE_RELAY_ATTEMPTS[attempt];
+                relayQueued = false;
+                relayTextPayload = '';
                 const relayForm = new FormData();
                 relayForm.append('prompt', makeVisualPrompt);
                 relayForm.append('model', activeRelayCandidate.model);
@@ -1018,22 +1022,36 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
 
                 relayContentType = relayResponse.headers.get('content-type') || '';
                 if (relayResponse.ok) {
-                  break;
+                  if (relayContentType.includes('text/plain')) {
+                    relayTextPayload = await relayResponse.text().catch(() => '');
+                    if (/^Accepted$/i.test(relayTextPayload.trim())) {
+                      relayQueued = true;
+                      relayFailureMessage = 'Accepted';
+                    } else {
+                      break;
+                    }
+                  } else {
+                    break;
+                  }
                 }
 
                 let attemptMessage = '';
-                if (relayContentType.includes('application/json')) {
+                if (relayQueued) {
+                  attemptMessage = 'Accepted';
+                } else if (relayContentType.includes('application/json')) {
                   const relayError = await relayResponse.json().catch(() => ({}));
                   attemptMessage = relayError?.error?.message || relayError?.error || '';
-                } else {
+                } else if (!relayResponse.ok) {
                   attemptMessage = await relayResponse.text().catch(() => '');
                 }
 
                 relayFailureMessage = attemptMessage || `Make 中转请求失败 (${relayResponse.status})`;
                 const isRetryable =
+                  relayQueued ||
                   relayResponse.status === 429 ||
                   relayResponse.status >= 500 ||
                   /Scenario failed to complete/i.test(relayFailureMessage) ||
+                  /Accepted/i.test(relayFailureMessage) ||
                   /\[429\]/i.test(relayFailureMessage) ||
                   /RateLimit/i.test(relayFailureMessage);
 
@@ -1046,7 +1064,10 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 }
               }
 
-              if (!relayResponse?.ok) {
+              if (!relayResponse?.ok || relayQueued) {
+                if (/Accepted/i.test(relayFailureMessage)) {
+                  throw new Error('云端图生图请求已进入排队，但当前等待超时。请保持页面前台停留后重试一次。');
+                }
                 if (/Scenario failed to complete/i.test(relayFailureMessage) || /\[429\]/i.test(relayFailureMessage) || /RateLimit/i.test(relayFailureMessage)) {
                   throw new Error('3.1 生图节点暂时拥挤。页面已自动切换区域并重试，若仍失败请等待 1-2 分钟后再试。');
                 }
@@ -1067,7 +1088,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 return;
               }
 
-              const relayText = await relayResponse.text().catch(() => '');
+              const relayText = relayTextPayload || await relayResponse.text().catch(() => '');
               let relayData = {};
 
               try {
