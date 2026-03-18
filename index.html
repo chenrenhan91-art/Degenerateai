@@ -196,8 +196,8 @@
       const LOCAL_PROXY_ENDPOINT = '/api/generate-image';
       const MAKE_WEBHOOK_STORAGE_KEY = 'degradation_make_webhook_url';
       const MAKE_RELAY_MODEL = 'gemini-3.1-flash-image-preview';
-      const MAKE_RELAY_REGION = 'asia-northeast1';
-      const MAKE_RELAY_RETRY_DELAYS = [0, 3000, 8000, 15000];
+      const MAKE_RELAY_REGION = 'us-east4';
+      const MAKE_RELAY_RETRY_DELAYS = [0, 4000, 10000, 20000, 35000];
       const MANIFESTO_LINES = [
         '不要再进化了。',
         '不要再被 AI 推着奔跑了。',
@@ -407,8 +407,41 @@
       const isAndroidLikeDevice = () => /Android/i.test(getUserAgent());
       const isWeChatBrowser = () => /MicroMessenger/i.test(getUserAgent());
 
+      const inferMimeTypeFromName = (filename = '') => {
+        const lower = filename.toLowerCase();
+        if (/\.(jpe?g)$/.test(lower)) return 'image/jpeg';
+        if (/\.png$/.test(lower)) return 'image/png';
+        if (/\.webp$/.test(lower)) return 'image/webp';
+        if (/\.heic$/.test(lower)) return 'image/heic';
+        if (/\.heif$/.test(lower)) return 'image/heif';
+        if (/\.avif$/.test(lower)) return 'image/avif';
+        if (/\.gif$/.test(lower)) return 'image/gif';
+        if (/\.svg$/.test(lower)) return 'image/svg+xml';
+        return '';
+      };
+
+      const normalizeIncomingFile = (file) => {
+        const inferredMimeType = (file.type || inferMimeTypeFromName(file.name || '')).toLowerCase();
+        if (!inferredMimeType.startsWith('image/')) {
+          return { file, mimeType: '' };
+        }
+
+        if (file.type === inferredMimeType && file instanceof File) {
+          return { file, mimeType: inferredMimeType };
+        }
+
+        try {
+          return {
+            file: new File([file], file.name || 'upload-image', { type: inferredMimeType }),
+            mimeType: inferredMimeType,
+          };
+        } catch (_) {
+          return { file, mimeType: inferredMimeType };
+        }
+      };
+
       const normalizeUploadFile = async (file) => {
-        const normalizedType = (file.type || '').toLowerCase();
+        const normalizedType = (file.type || inferMimeTypeFromName(file.name || '')).toLowerCase();
         const isTouchDevice = isTouchLikeDevice();
         const isVectorOrGif = normalizedType === 'image/gif' || normalizedType === 'image/svg+xml';
         const isLikelyPhonePhoto = /heic|heif|avif/i.test(normalizedType);
@@ -420,7 +453,7 @@
           return {
             file,
             dataUrl,
-            mimeType: file.type || 'image/jpeg',
+            mimeType: normalizedType || 'image/jpeg',
           };
         }
 
@@ -450,7 +483,7 @@
           return {
             file,
             dataUrl: sourceDataUrl,
-            mimeType: file.type || 'image/jpeg',
+            mimeType: normalizedType || 'image/jpeg',
           };
         }
 
@@ -503,11 +536,11 @@
           return {
             file,
             dataUrl: sourceDataUrl,
-            mimeType: file.type || 'image/jpeg',
+            mimeType: normalizedType || 'image/jpeg',
           };
         }
 
-        const normalizedName = file.name.replace(/\.(png|jpe?g|webp|heic|heif|avif)$/i, outputType === 'image/png' ? '.png' : '.jpg');
+        const normalizedName = (file.name || 'upload-image').replace(/\.(png|jpe?g|webp|heic|heif|avif)$/i, outputType === 'image/png' ? '.png' : '.jpg');
         const normalizedFile = new File([blob], normalizedName, { type: outputType });
         const normalizedDataUrl = await blobToDataUrl(blob);
 
@@ -930,9 +963,14 @@
         };
 
         const handleFileChange = async (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          if (!file.type.startsWith('image/')) {
+          const rawFile = e.target.files[0];
+          if (!rawFile) return;
+
+          const normalizedIncoming = normalizeIncomingFile(rawFile);
+          const file = normalizedIncoming.file;
+          const effectiveMimeType = normalizedIncoming.mimeType;
+
+          if (!effectiveMimeType.startsWith('image/')) {
             alert('请上传图片文件 (JPG/PNG/WEBP)');
             return;
           }
@@ -946,20 +984,22 @@
             setUploadStatus('uploaded');
           } catch (error) {
             console.error(error);
-            if (isTouchLikeDevice()) {
-              try {
-                const originalDataUrl = await fileToDataUrl(file);
-                setUploadedSourceFile(file);
-                setUploadedImage(originalDataUrl);
-                const base64 = originalDataUrl.split(',')[1];
-                setBase64Data(base64);
-                setImageMimeType(file.type || 'image/jpeg');
-                setUploadStatus('uploaded');
+            try {
+              const originalDataUrl = await fileToDataUrl(file);
+              setUploadedSourceFile(file);
+              setUploadedImage(originalDataUrl);
+              const base64 = originalDataUrl.split(',')[1];
+              setBase64Data(base64);
+              setImageMimeType(effectiveMimeType || file.type || inferMimeTypeFromName(file.name || '') || 'image/jpeg');
+              setUploadStatus('uploaded');
+              if (isTouchLikeDevice()) {
                 setErrorMsg('移动端图片预处理失败，已自动切换为原图直传模式；生成时间可能更长。');
-                return;
-              } catch (fallbackError) {
-                console.error(fallbackError);
+              } else {
+                setErrorMsg('图片预处理失败，已自动切换为原图直传模式；生成时间可能更长。');
               }
+              return;
+            } catch (fallbackError) {
+              console.error(fallbackError);
             }
             alert('图片预处理失败，请换一张 JPG/PNG/WEBP 图片重试。');
           }
@@ -996,7 +1036,7 @@
 
 Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${reportAnimalLabel}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
 
-          const makeVisualPrompt = `Y2K surreal digital collage with 5 overlapping full-body layers of the same person arranged diagonally from top-left to bottom-right. Use the uploaded photo as the identity source and ignore the original background clutter. Stage 1 is fully human. Stage 2 is about 25% ${promptAnimalLabel}. Stage 3 is a 50% hybrid. Stage 4 is about 75% ${promptAnimalLabel} and must still clearly evolve from stage 3. Stage 5 is a natural full-body ${promptAnimalLabel} with absolutely no human anatomy, clothing, or accessories. Keep the same camera angle, pose direction, body-mass continuity, and clean silhouette transition across all five stages. Dreamy pastel pink and purple cloudy sky, retro 2000s Photoshop layering, high contrast, no text, no watermark, no extra objects.`;
+          const makeVisualPrompt = `Create one Y2K surreal collage with 5 overlapping full-body stages of the same subject, arranged diagonally from top-left to bottom-right. Use the uploaded person as the identity source and ignore the original background. Stage 1 human, stage 2 about 25% ${promptAnimalLabel}, stage 3 about 50%, stage 4 about 75%, stage 5 a natural full-body ${promptAnimalLabel} with no human anatomy, clothes, or accessories. Keep the same camera angle, pose direction, silhouette continuity, and gradual morph across all stages. Clean pastel pink and purple cloudy sky, retro 2000s Photoshop layering, high contrast, no text, no watermark, no extra objects.`;
 
           const payload = {
             contents: [{
@@ -1901,7 +1941,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                     <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
                     <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
                     <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
-                    <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">公共 3.1 节点繁忙时可能需要等待 30-90 秒，请保持页面停留在前台。</p>
+                    <p className="text-zinc-500 font-tech text-[9px] sm:text-[10px] tracking-[0.1em] mt-2 relative z-10 text-center px-5">公共 3.1 节点繁忙时页面会自动重试，可能需要等待 1-3 分钟，请保持页面停留在前台。</p>
                   </div>
                 )}
 
