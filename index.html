@@ -301,12 +301,165 @@
         }
       };
 
-      const createFallbackReport = (animal) => ({
-        degradationFocus: `已切换成${animal.name}式活法，优先晒太阳、觅食、散步和发呆，不再把人生交给日程表。`,
-        instinctProfile: `${animal.name}本能已全面接管，看到群消息先装死，听见下班铃立刻恢复生命体征。`,
-        habitat: `适合栖息在树荫、长椅、菜市场、便利店门口和一切能缓慢活着的低压地带。`,
-        memo: `去科技化完成。建议少刷通知、多闻空气，按肚子饿和天黑的节奏安排今天。`,
-      });
+      const REPORT_BLUEPRINTS = {
+        cat: {
+          degradationFocus: '已退化为猫系低耗能个体。白天贴着热源发呆，夜里突然精神抖擞，对晨会和自律系统持续表现出敌意。',
+          instinctProfile: '社交策略已切换为“想理你时蹭一下，不想理你时直接消失”。对群消息常见已读未回，对纸箱和高处拥有天然占领欲。',
+          habitat: '最佳栖息地为靠窗工位、沙发扶手、晒得到太阳的地砖，以及一切可以把责任推出去的柔软角落。',
+          memo: '档案显示该样本仍保留捕猎红点和半夜巡逻能力，但已彻底放弃主动服务人类。'
+        },
+        dog: {
+          degradationFocus: '已退化为犬系高情绪回应个体。看到下班、吃饭、出门三个关键词会瞬间摇尾复活，工作焦虑则靠到处闻闻解决。',
+          instinctProfile: '对熟人高度热情，对 KPI 不具备长期记忆。容易被一句“走，出去转转”直接拐离生产系统。',
+          habitat: '适合栖息在楼下空地、电梯口、便利店门前和一切能短暂放风的低门槛生活区。',
+          memo: '该样本忠诚度仍在，但已从“忠于组织”退化为“忠于投喂、散步和被摸头”。'
+        },
+        hamster: {
+          degradationFocus: '已退化为仓鼠系囤积型个体。表面安静，实际正在桌面、抽屉和购物车里疯狂储备安全感。',
+          instinctProfile: '遇事先把自己缩起来，再偷偷把零食和情绪全部藏好。对深夜偷吃和突然消失具备极强执行力。',
+          habitat: '适合栖息在工位角落、出租屋储物柜、床边小桌，以及所有能把自己团成一团的微型空间。',
+          memo: '档案显示该样本对滚轮式瞎忙保持高度依赖，看起来很勤奋，其实主要在原地空转。'
+        },
+        cockroach: {
+          degradationFocus: '已退化为蟑螂系极端生存个体。被生活反复拍打后仍能继续移动，对尴尬、加班和脏乱环境都有惊人耐受。',
+          instinctProfile: '白天尽量不现身，夜晚开始高频活动。对“这都能活”型人生场景具备超常适应力。',
+          habitat: '适合栖息在出租屋缝隙、深夜办公室、24 小时便利店附近，以及所有人类体面刚刚失效的地方。',
+          memo: '该样本已不追求精致，只追求活下去；其精神状态虽不可爱，但极其顽强。'
+        },
+        fly: {
+          degradationFocus: '已退化为苍蝇系高频乱飞个体。专注力维持时间极短，脑内始终处于“到处看看”模式。',
+          instinctProfile: '会在多个任务、多个窗口、多个念头之间反复盘旋，却很难真正落地停稳。',
+          habitat: '适合栖息在开着灯的房间、外卖附近、消息通知堆里，以及一切让人分神的嘈杂环境。',
+          memo: '档案提示该样本并非故意烦人，只是本能决定它必须不断嗡嗡出现在所有事情旁边。'
+        },
+        monkey: {
+          degradationFocus: '已退化为猴系高机动个体。情绪和注意力都很灵活，上一秒还在认真，下一秒就已经开始捣乱。',
+          instinctProfile: '喜欢围观、模仿、试探边界，对“别碰那个”类提示有天然逆反心理。',
+          habitat: '适合栖息在热闹办公室、朋友堆、楼梯口和任何能一边上蹿下跳一边逃避正事的场所。',
+          memo: '该样本依旧聪明，但已把智力优先用于找乐子，而不是配合系统继续进化。'
+        },
+        gorilla: {
+          degradationFocus: '已退化为猩猩系低语权重个体。平时懒得动，一旦被逼急会突然拍胸表达强烈不满。',
+          instinctProfile: '社交方式偏沉默压迫型，不爱解释，但会用体型、气场和眼神让周围人自行退后。',
+          habitat: '适合栖息在安静角落、大沙发、健身房外圈，以及所有可以不被打扰地发呆的宽阔地带。',
+          memo: '档案显示该样本并不想统治谁，它只是懒得装文明。'
+        },
+        rabbit: {
+          degradationFocus: '已退化为兔系高警觉个体。外表柔软无害，实际上对突发消息、脚步声和被点名极度敏感。',
+          instinctProfile: '核心策略是边吃边警惕，能躲则躲，不能躲就先僵住，再寻找最近的逃生路线。',
+          habitat: '适合栖息在床边、窗帘后、安静公园和一切可以快速撤退的半封闭空间。',
+          memo: '该样本看上去温顺，实则把“别来吓我”写进了每一根神经。'
+        },
+        fox: {
+          degradationFocus: '已退化为狐狸系精明躲闪个体。看似松弛，其实对局势很敏感，但通常选择优雅地不掺和。',
+          instinctProfile: '善于保持神秘距离，擅长用漂亮姿态掩盖真实意图，对无聊社交拥有丝滑撤离能力。',
+          habitat: '适合栖息在城市边缘、深夜街道、独处房间，以及所有能保持体面又方便跑路的场景。',
+          memo: '档案显示该样本并非冷漠，只是比多数人更早看穿了很多热闹不值得参与。'
+        },
+        wolf: {
+          degradationFocus: '已退化为狼系离群个体。偶尔需要群体，更多时候只想自己走，讨厌被管理成标准件。',
+          instinctProfile: '对同伴有选择性忠诚，对陌生规则和口号型激情缺乏基本信任。',
+          habitat: '适合栖息在夜路、郊区、耳机里，以及所有可以边走边恢复野性的空旷地带。',
+          memo: '该样本已停止讨好所有人，只对真正认可的同类保留协同行动能力。'
+        },
+        tiger: {
+          degradationFocus: '已退化为虎系独居猛兽个体。平时懒得营业，但不代表好说话；一旦被打扰过度，攻击性会快速上线。',
+          instinctProfile: '更适合单人节奏和大块独处，不接受低质量协作，也不接受被当众安排。',
+          habitat: '适合栖息在独立房间、边缘工位、深色沙发和一切能保持领地感的地方。',
+          memo: '档案备注：该样本不是不合群，只是不愿意把自己降级成群体背景板。'
+        },
+        lion: {
+          degradationFocus: '已退化为狮系气场型个体。真正的工作量未必最高，但躺着也要保留王者姿态。',
+          instinctProfile: '更擅长让别人感受到“它在场”，而不是亲自处理每一件具体小事。',
+          habitat: '适合栖息在中央大位、阳光最好那块地、床正中，以及所有能自然成为视觉中心的位置。',
+          memo: '该样本对权威感仍有强需求，但已经把“统治欲”转换为“别打扰我休息”。'
+        },
+        panda: {
+          degradationFocus: '已退化为熊猫系珍稀摆烂个体。主打一个慢、贵、可爱且不适合高产，对复杂世界保持稳定钝感。',
+          instinctProfile: '食谱单一，行动缓慢，社交低频，但依然能凭借外形优势获得周围人谅解和投喂。',
+          habitat: '适合栖息在有空调的室内、安静角落、靠枕堆和一切不会逼它提高效率的舒适地带。',
+          memo: '档案显示该样本已完全放弃成为全能人类，改为专心做一个受保护的脆弱废物。'
+        },
+        capybara: {
+          degradationFocus: '已退化为水豚系和平摆烂个体。面对混乱环境的第一反应不是解决，而是先泡着、先缓缓、先别急。',
+          instinctProfile: '社交阈值极高，吵不起来，也卷不进去。对世界的主要态度是“你们先闹，我再看看”。',
+          habitat: '适合栖息在浴缸、温泉边、河岸、长椅和所有能慢慢泡着活的低刺激区域。',
+          memo: '档案判定该样本不是没脾气，而是觉得大多数冲突都不值得从水里出来。'
+        },
+        crow: {
+          degradationFocus: '已退化为乌鸦系聪明记仇个体。观察力过强，对人类荒谬行为有完整记录，但懒得逐条点评。',
+          instinctProfile: '擅长旁观、回收、记脸和远距离阴阳，对闪亮废物和八卦信息保持异常敏锐。',
+          habitat: '适合栖息在电线杆、高处窗台、城市边缘和所有方便俯视众生的制高点。',
+          memo: '该样本智力并未退化，只是把聪明全部转去看热闹和记仇了。'
+        },
+        parrot: {
+          degradationFocus: '已退化为鹦鹉系复读型个体。能量高的时候极会输出，但内容未必原创，胜在语气自信。',
+          instinctProfile: '对热词、口头禅、群体语言和他人情绪极易模仿，一开心就开始高频发声。',
+          habitat: '适合栖息在热闹客厅、开放工位、朋友聊天局，以及一切允许它插嘴的场合。',
+          memo: '档案提示该样本说得很多，不代表它都理解；但它确实很享受参与空气。'
+        },
+        duck: {
+          degradationFocus: '已退化为鸭系表面淡定个体。水面上看似稳定滑行，水下其实一直在疯狂划拉维持生活。',
+          instinctProfile: '擅长把慌张藏进平静外表里，对外永远“还行吧”，对内已经连续扑腾三小时。',
+          habitat: '适合栖息在有水边的地方、单位摸鱼带、城市公园和一切方便边漂边混日子的区域。',
+          memo: '该样本并没有真正从容，只是很会演出一种“问题不大”的体面。'
+        },
+        frog: {
+          degradationFocus: '已退化为青蛙系间歇启动个体。大多数时间保持静止，一旦时机对了会突然完成高质量弹射。',
+          instinctProfile: '喜欢潮湿、阴凉、低社交环境，对突发任务不是马上接招，而是先蹲着判断值不值得跳。',
+          habitat: '适合栖息在池塘边、雨天窗台、洗手间门口和所有不用持续输出的湿润角落。',
+          memo: '档案显示该样本并非懒惰，而是严格执行“非必要不乱跳”的节能法则。'
+        },
+        snake: {
+          degradationFocus: '已退化为蛇系低能耗潜伏个体。平时几乎没有存在感，但对环境变化和他人情绪异常敏感。',
+          instinctProfile: '不爱多话，移动安静，擅长在关键时刻精准出现；对无意义热闹保持持续降温态度。',
+          habitat: '适合栖息在阴影、沙发缝、安静房间和一切无需频繁解释自己的狭长空间。',
+          memo: '该样本已将社交从“多说多做”退化为“看完再决定是否吐信子”。'
+        },
+        lizard: {
+          degradationFocus: '已退化为蜥蜴系晒太阳个体。核心日程只剩下升温、停机、找地方趴着，对复杂叙事不再响应。',
+          instinctProfile: '情绪表达偏冷血，但对温度、光照和安全平面高度依赖，社交意愿随体温浮动。',
+          habitat: '适合栖息在窗台、阳台、热石头边和所有能安静补充太阳能的地方。',
+          memo: '档案确认该样本不是冷漠，是还没晒够。'
+        },
+        octopus: {
+          degradationFocus: '已退化为章鱼系多线程个体。脑子和手脚都很多，但真正的目标是找个地方把自己藏起来。',
+          instinctProfile: '能同时处理多件事，也能在感到不安全时瞬间喷墨隐身，对复杂世界有天然防御机制。',
+          habitat: '适合栖息在工位隔板后、深色被窝、耳机里和所有方便藏身又能远程伸手处理事务的区域。',
+          memo: '该样本看似全能，实则只想躲进自己的洞里，偶尔伸出一只手回复现实。'
+        },
+        shark: {
+          degradationFocus: '已退化为鲨鱼系持续前进个体。停下来会不安，所以总在移动，但移动不代表认同这套世界规则。',
+          instinctProfile: '对弱小废话缺乏耐心，更相信直觉和速度；一旦嗅到机会，会比人类礼貌系统更快抵达现场。',
+          habitat: '适合栖息在高速节奏区、深夜路上、地铁换乘带和任何必须边游边活的地方。',
+          memo: '档案提醒：该样本看似冷酷，其实只是停止了无意义的温柔消耗。'
+        },
+        cow: {
+          degradationFocus: '已退化为奶牛系反刍型个体。面对信息过载不会立即处理，而是先吞下去，之后再慢慢嚼回忆。',
+          instinctProfile: '生活节奏偏慢，擅长站着发呆和重复思考，对草地、奶茶和稳定作息抱有天然亲近。',
+          habitat: '适合栖息在郊区、超市冷柜附近、宿舍床边和一切能安心反刍情绪的平静地带。',
+          memo: '该样本已拒绝高频刺激，改为靠反复咀嚼日常维持内心秩序。'
+        },
+        pig: {
+          degradationFocus: '已退化为猪系务实享乐个体。对“体面努力”兴趣下降，对睡眠、吃饭和躺平体验的要求显著提升。',
+          instinctProfile: '不再假装热爱奋斗，核心诉求直接回到饱腹、温暖和不被催促，活得非常具体。',
+          habitat: '适合栖息在床垫、沙发、饭桌附近，以及一切允许先吃先睡再说的现实空间。',
+          memo: '档案显示该样本并不羞于变懒，因为它终于承认舒服本来就是一种正当追求。'
+        },
+        sheep: {
+          degradationFocus: '已退化为羊系温吞个体。情绪柔软，反应偏慢，面对世界的首选方案是先靠一靠、再缓一缓。',
+          instinctProfile: '讨厌尖锐冲突，喜欢群体安全感，但一旦环境太吵也会立刻想逃回自己的小草地。',
+          habitat: '适合栖息在毛毯堆、安静宿舍、草坪边和一切让人能慢慢恢复触感的温柔空间。',
+          memo: '档案确认该样本不是没主见，只是优先保护自己的柔软部分。'
+        }
+      };
+
+      const createFallbackReport = (animal) => REPORT_BLUEPRINTS[animal.id] || {
+        degradationFocus: `已退化为${animal.name}系低生产个体，开始按食欲、困意和天气安排人生，不再主动配合效率神话。`,
+        instinctProfile: `${animal.name}本能已接管日常行为，面对群聊、会议和通知时更倾向先观察，再决定要不要现身。`,
+        habitat: `适合栖息在能晒太阳、能发呆、能暂时脱离数字系统的低压角落，越接近自然越稳定。`,
+        memo: `档案结论：该样本已停止把自己活成工具，正在学习像一只真正的${animal.name}那样把日子过回身体里。`,
+      };
 
       const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -1034,7 +1187,7 @@
 
           const prompt = `${visualPrompt}
 
-Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Theme: after devolving into ${reportAnimalLabel}, the subject now lives in the human world by instinct instead of productivity, apps, schedules, dashboards, notifications, meetings, and optimization. Emphasize de-tech life, sunlight, food, walking, sleeping, wandering, touching grass, low-energy survival, and escaping digital pressure. Make it relatable, funny, screenshot-friendly, and strongly memeable for Chinese social media. Tone: 一本正经胡说八道, playful, sharp, specific, and emotionally resonant. Each field should be 1-2 short Chinese sentences and feel like a quotable line someone would repost.`;
+Also return a compact JSON object in Chinese for a meme-style "退化鉴定书". Output only one JSON object in a text part with these exact string keys: degradationFocus, instinctProfile, habitat, memo. Writing direction: combine pseudo-official research archive tone with animal-to-human-world contrast humor. Each field must clearly reflect recognizable ${reportAnimalLabel} traits, not generic de-tech slogans. Translate the animal's real habits, temperament, movement style, sleep pattern, social style, territory preference, hunting/foraging instinct, or alertness into funny descriptions of living inside modern human society. Use office life, group chats, rent life, commuting, eating, sleeping, avoiding meetings, dodging notifications, and escaping optimization as reference scenes. Tone: 一本正经胡说八道, specific, screenshot-friendly, and highly memeable for Chinese social media. Each field should be 1-2 short Chinese sentences and feel like a quotable "伪科研档案" judgment.`;
 
           const makeVisualPrompt = `Create one Y2K surreal collage with 5 overlapping full-body stages of the same subject, arranged diagonally from top-left to bottom-right. Use the uploaded person as the identity source and ignore the original background. Stage 1 human, stage 2 about 25% ${promptAnimalLabel}, stage 3 about 50%, stage 4 about 75%, stage 5 a natural full-body ${promptAnimalLabel} with no human anatomy, clothes, or accessories. Keep the same camera angle, pose direction, silhouette continuity, and gradual morph across all stages. Clean pastel pink and purple cloudy sky, retro 2000s Photoshop layering, high contrast, no text, no watermark, no extra objects.`;
 
