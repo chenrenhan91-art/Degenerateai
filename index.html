@@ -2008,29 +2008,6 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                       </div>
                     )}
 
-                    <div className="border border-cyan-900/35 bg-cyan-950/10 p-3 sm:p-4 rounded">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
-                        <div className="text-xs font-tech text-cyan-400 tracking-[0.2em]">CLOUD RELAY / MAKE WEBHOOK</div>
-                        <div className={`text-[10px] font-tech tracking-[0.18em] ${makeWebhookUrl.trim() ? 'text-green-400' : 'text-zinc-500'}`}>
-                          {makeWebhookUrl.trim() ? 'ACTIVE' : 'NOT CONFIGURED'}
-                        </div>
-                      </div>
-                      <input
-                        type="url"
-                        inputMode="url"
-                        autoCapitalize="off"
-                        autoCorrect="off"
-                        spellCheck="false"
-                        placeholder="https://hook.us1.make.com/your-webhook"
-                        value={makeWebhookUrl}
-                        onChange={(event) => setMakeWebhookUrl(event.target.value)}
-                        className="w-full border border-cyan-900/40 bg-black/70 px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600 focus:border-cyan-500"
-                      />
-                      <p className="mt-2 text-[11px] sm:text-xs leading-5 text-zinc-500">
-                        国内无 VPN 时建议填写 Make webhook。填写后页面会优先通过 Make 云端中转调用 Gemini，并自动保存到本机浏览器。
-                      </p>
-                    </div>
-
                     <div className="flex flex-col sm:flex-row gap-4">
                       <div onClick={triggerFileInput} className={`relative w-full sm:w-32 h-40 sm:h-32 border-2 border-dashed flex items-center justify-center cursor-pointer transition-all rounded bg-black overflow-hidden shrink-0 ${uploadStatus === 'uploaded' ? 'border-green-500/50 hover:border-green-400' : 'border-zinc-700 hover:border-red-500/50 hover:bg-zinc-900'}`}>
                         {uploadedImage ? (
