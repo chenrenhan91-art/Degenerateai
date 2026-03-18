@@ -1960,7 +1960,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                   </div>
 
                   {/* 阶段 5：终端寄生 */}
-                  <div className={`flex flex-col items-center transition-all duration-100 transform delay-100 ${evoStage >= 5 ? 'opacity-100 translate-y-0 text-red-500 stage-5-glitch' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
+                  <div className={`flex flex-col items-center transition-all duration-100 transform delay-100 ${evoStage >= 5 ? 'opacity-100 translate-y-0 text-red-500' : 'opacity-20 translate-y-4 text-zinc-700'}`}>
                     <div className="mb-4 text-xs font-tech tracking-widest bg-black px-2 border border-current rounded-sm">STAGE 05: TERMINAL</div>
                     <svg viewBox="0 0 100 100" className="w-24 h-24 md:w-32 md:h-32 stroke-current fill-none stroke-[3] stroke-linecap-square">
                       <circle cx="60" cy="34" r="6" />
@@ -2067,7 +2067,7 @@ Also return a compact JSON object in Chinese for a meme-style "退化鉴定书".
                 {processState === 'processing' && (
                   <div className="w-full py-16 sm:py-24 flex flex-col items-center justify-center relative overflow-hidden bg-[#020202]">
                     <div className="absolute inset-0 scanlines opacity-40"></div>
-                    <div className="absolute top-1/2 left-0 w-full h-1 bg-red-500 shadow-[0_0_20px_#ff003c] animate-[pulse_0.5s_infinite] -translate-y-1/2"></div>
+                    <div className="absolute top-1/2 left-0 w-full h-1 bg-red-500 shadow-[0_0_20px_#ff003c] opacity-80 -translate-y-1/2"></div>
                     <Loader2 className="w-12 h-12 text-red-500 animate-spin mb-4 relative z-10 drop-shadow-[0_0_10px_#ff003c]" />
                     <h3 className="text-lg sm:text-xl font-black tracking-[0.2em] sm:tracking-[0.4em] text-white glitch-text relative z-10 text-center px-4" data-text="AI引擎重写中">AI引擎重写中</h3>
                     <p className="text-red-400 font-tech text-[10px] sm:text-xs tracking-[0.16em] sm:tracking-widest mt-2 opacity-80 relative z-10 text-center px-4">INJECTING {selectedAnimal.name.toUpperCase()} DNA VIA CORE ENGINE...</p>
